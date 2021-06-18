@@ -1,0 +1,1055 @@
+```{r include=FALSE}
+library(dplyr, quietly = TRUE)
+library(tidyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
+library(rethinking)
+library(brms)
+library(ggdag, quietly = TRUE)
+library(dagitty, quietly = TRUE)
+library(ggdist, quietly = TRUE)
+library(patchwork, quietly = TRUE)
+library(paletteer, quietly = TRUE)
+```
+
+
+# Multivariate Linear Models {#multivariate}
+
+As mentioned in the summary of chapter 4, from hereon, the `brms` package will
+be used instead of `rethinking`.  In addition, we might change the `exponential(1)`
+prior for the `cauchy(0, 1)` when it improves the performance of the fit.
+
+## Spurious association
+
+Get the data and standardize the variables
+
+```{r}
+# load data
+data("WaffleDivorce")
+d <- WaffleDivorce
+# standardize the variables
+d <- d %>%
+  mutate(A = round(scale(MedianAgeMarriage), 4),
+         M = round(scale(Marriage), 4),
+         D = round(scale(Divorce), 4))
+skimr::skim(d)
+```
+
+```{r}
+GGally::ggscatmat(d, columns = c("A", "M", "D")) +
+  # scale_color_paletteer_d(palette = "calecopal::buow") +
+  theme_minimal()
+```
+
+
+
+
+
+We will be using this function in the plots to show the natural scales.
+
+```{r}
+# Function used to reverse the scale function
+rev_scale <- function(x, d) {
+  center <- attr(d, which = "scaled:center")
+  scale <- attr(d, which = "scaled:scale")
+  stopifnot(is.finite(center), is.finite(scale))
+  center + x * scale
+}
+# test it
+t <- rev_scale(x = d$A, d = d$A)
+near(mean(t), attr(d$A, which = "scaled:center"), tol = 1e-5)
+```
+
+
+
+The model for regressing the divorce rate $D$ on the median age $A$ is
+
+$$
+\begin{align*}
+D_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_A \cdot A_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_A &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+and the fit, **take note of the argument `sample_prior = TRUE`** which is
+important for the rest of the exercise
+
+```{r}
+a_file <- here::here("fits", "b05_01.rds")
+b5.1 <- readRDS(file = a_file)
+# b5.1 <- brm(
+#   data = d,
+#   formula = D ~ 1 + A,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(0, 0.02), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, 
+#   sample_prior = TRUE,
+#   core = detectCores(), seed = 5
+# )
+# b5.1 <- brms::add_criterion(b5.1, criterion = c("waic", "loo"))
+# saveRDS(b5.1, file = a_file)
+summary(b5.1)
+```
+
+and we can investigate the priors as follows
+
+```{r}
+b5.1_prior <- brms::prior_samples(b5.1)
+glimpse(b5.1_prior)
+```
+
+
+get the fitted $\mu_i$ by using a sequence of median age marriage of length 30
+from the `min(MedianAgeMarriage)` to `max(MedianAgeMarriage)`.
+
+```{r}
+age_seq <- data.frame(A = seq(from = min(d$A), to = max(d$A), length.out = 30))
+b5.1_fitted <- age_seq %>%
+  fitted(object = b5.1, newdata = ., probs = c(0.055, 0.945)) %>%
+  as_tibble() %>%
+  bind_cols(age_seq)
+# glimpse(b5.1_fitted)
+```
+
+and plot them 
+
+```{r}
+b5.1_scat <- ggplot(data = d, mapping = aes(x = A, y = D)) +
+  geom_smooth(data = b5.1_fitted,
+              aes(y = Estimate, ymin = Q5.5, ymax = Q94.5),
+              stat = "identity",
+              fill = "olivedrab1", color = "olivedrab4", alpha = 1, size = 1/2) +
+  geom_point(aes(color = as.logical(South))) +
+  scale_x_continuous(
+      breaks = scales::breaks_extended(n = 7),
+      labels = scales::trans_format(
+        trans = function(x) rev_scale(x, d$A),  ## see rev_scale funciton above
+        format = scales::label_number(scale = 1))) +
+  scale_y_continuous(
+      breaks = scales::breaks_extended(n = 7),
+      labels = scales::trans_format(
+        trans = function(x) rev_scale(x, d$D),  ## see rev_scale funciton above
+        format = scales::label_number(scale = 1))) +
+  scale_color_paletteer_d("calecopal::kelp1", direction = -1) +
+  coord_cartesian(xlim = range(age_seq$A)) +
+  theme_minimal() +
+  theme(legend.position = c(0.85, 0.85),
+        title = element_text(color = "midnightblue")) +
+  labs(title = "Divorce rate vs Median Marriage age",
+       color = "South = TRUE",
+       x = "Median age", y = "Divorce rate")
+# b5.1_scat
+```
+
+
+The model for regressing the divorce rate $D$ on the marriage rate $M$ is
+
+$$
+\begin{align*}
+D_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_M \cdot M_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_A &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+
+```{r}
+a_file <- here::here("fits", "b05_02.rds")
+b5.2 <- readRDS(file = a_file)
+# b5.2 <- brm(
+#   data = d,
+#   formula = D ~ 1 + M,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(0, 0.02), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4,
+#   sample_prior = TRUE,
+#   core = detectCores(), seed = 5
+# )
+# b5.2 <- brms::add_criterion(b5.2, criterion = c("waic", "loo"))
+# saveRDS(b5.2, file = a_file)
+summary(b5.2)
+```
+
+
+
+```{r}
+age_seq <- data.frame(M = seq(from = min(d$M), to = max(d$M), length.out = 30))
+b5.2_fitted <- age_seq %>%
+  fitted(object = b5.2, newdata = ., probs = c(0.055, 0.945)) %>%
+  as_tibble() %>%
+  bind_cols(age_seq)
+# glimpse(b5.2_fitted)
+```
+
+and plot them 
+
+```{r}
+b5.2_scat <- ggplot(data = d, mapping = aes(x = M, y = D)) +
+  geom_smooth(data = b5.2_fitted,
+              aes(y = Estimate, ymin = Q5.5, ymax = Q94.5),
+              stat = "identity",
+              fill = "springgreen1", color = "springgreen4", alpha = 1, size = 1/2) +
+  geom_point(aes(color = as.logical(South))) +
+  scale_x_continuous(
+      breaks = scales::breaks_extended(n = 7),
+      labels = scales::trans_format(
+        trans = function(x) rev_scale(x, d$M),  ## see rev_scale funciton above
+        format = scales::label_number(scale = 1))) +
+  scale_y_continuous(
+      breaks = scales::breaks_extended(n = 7),
+      labels = scales::trans_format(
+        trans = function(x) rev_scale(x, d$D),  ## see rev_scale funciton above
+        format = scales::label_number(scale = 1))) +
+  scale_color_paletteer_d("calecopal::kelp1", direction = -1) +
+  coord_cartesian(xlim = range(age_seq$M)) +
+  theme_minimal() +
+  theme(legend.position = c(0.85, 0.85),
+        title = element_text(color = "midnightblue")) +
+  labs(title = "Divorce rate vs Marriage rate",
+       color = "South = TRUE",
+       x = "Marriage rate", y = "Divorce rate")
+
+```
+
+
+```{r}
+b5.1_scat + b5.2_scat
+```
+
+
+
+### Think before you regress
+
+
+```{r}
+dag1_coord <- data.frame(
+  name = c("A", "D", "M"),
+  x = c(1, 2, 3),
+  y = c(2, 1, 2)
+)
+dag1 <- ggdag::dagify(M ~ A,
+                      D ~ A + M,
+                      coords = dag1_coord) %>%
+  ggdag::ggdag(node_size = 8) +
+  ggthemes::theme_solid(fill = "snow2")
+# str(dag1)
+p1 <- ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(aes(color = name)) +
+  scale_color_paletteer_d("calecopal::kelp1") +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  geom_dag_text(color = "midnightblue") +
+  geom_dag_edges(edge_color = "midnightblue") +
+  ggthemes::theme_solid(fill = "snow2") +
+  theme(legend.position = "none")
+dag2 <- ggdag::dagify(M ~ A,
+                      D ~ A,
+                      coords = dag1_coord) %>%
+  ggdag::ggdag(node_size = 8) +
+  ggthemes::theme_solid(fill = "snow2")
+# str(dag1)
+p2 <- ggplot(dag2$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(aes(color = name)) +
+  scale_color_paletteer_d("calecopal::kelp1") +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  geom_dag_text(color = "midnightblue") +
+  geom_dag_edges(edge_color = "midnightblue") +
+  ggthemes::theme_solid(fill = "snow2") +
+  theme(legend.position = "none")
+p1 | p2  # the | operator comes from patchwork library
+```
+
+### Testable implications
+
+
+```{r}
+dag <- "dag{ D <- A -> M }"
+dagitty::dagitty(dag) %>%
+  dagitty::impliedConditionalIndependencies()
+```
+
+
+
+```{r}
+dag <- "dag{ D <- A -> M -> D }"
+dagitty::dagitty(dag) %>%
+  dagitty::impliedConditionalIndependencies()
+message("This returns NULL because there are no conditional independencies")
+```
+
+
+### Multiple regression notation
+
+
+The model with median age and marriage rate, both standardized. 
+
+>The $+$ in the model can be interpreted as the divorce rate is a function
+of the marriage rate **OR** the median age of marriage
+
+$$
+\begin{align*}
+D_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_M \cdot M_i + \beta_A \cdot A_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_1 &\sim \mathcal{N}(0, 0.5) \\
+\beta_2 &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(0, 1)
+\end{align*}
+$$
+
+
+### Approximating the posterior
+
+
+
+```{r}
+a_file <- here::here("fits", "b05_03.rds")
+b5.3 <- readRDS(file = a_file)
+# b5.3 <- brm(
+#   data = d,
+#   formula = D ~ 1 + M + A,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(0, 0.2), class = Intercept),
+#     prior(normal(0, 0.5), class = b, coef = "M"),
+#     prior(normal(0, 0.5), class = b, coef = "A"),
+#     prior(exponential(1), class = sigma)
+#     ),
+#   iter = 2000, warmup = 1000, chains = detectCores(),
+#   core = detectCores(), seed = 5
+#  )
+# b5.3 <- brms::add_criterion(b5.3, criterion = c("waic", "loo"))
+# saveRDS(b5.3, file = a_file)
+summary(b5.3)
+```
+
+
+```{r}
+tidybayes::get_variables(b5.3)
+```
+
+
+```{r}
+b5.3_coef <- b5.3 %>%
+  gather_draws(b_Intercept, b_M, b_A)
+glimpse(b5.3_coef)
+b5.3$formula$formula
+```
+
+```{r}
+ggplot(b5.3_coef, aes(x = .value, y = .variable)) +
+  stat_pointinterval(.width = c(0, 0.055, 0.945, 1)) +
+  ggdist::theme_ggdist() +
+  labs(title = deparse1(b5.3$formula$formula),
+       y = NULL)
+```
+
+
+
+
+### Plotting multivariate posteriors
+
+
+3 main plots are used
+
+* Predictor residual plots
+* Posterior prediction plots
+* Counterfactual plots
+
+
+#### Predictor residual plots
+
+##### Marriage rate residuals
+
+```{r}
+# load data
+data("WaffleDivorce")
+d <- WaffleDivorce
+# standardize the variables
+d <- d %>%
+  mutate(A = as.vector(scale(MedianAgeMarriage)),
+         M = as.vector(scale(Marriage)),
+         D = as.vector(scale(Divorce)))
+# glimpse(d)
+```
+
+
+We compute marriage rate in *terms of median age of marriage* which is the model
+
+$$
+\begin{align*}
+M_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta \cdot A_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+fit this model
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_04.rds")  # rds file location
+b5.4 <- readRDS(file = a_file)
+# b5.4 <- brm(
+#   data = d,
+#   formula = M ~ 1 + A,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(0, 0.2), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 100, chains = 4, core = 4,
+#   seed = 5
+# )
+# saveRDS(b5.4, file = a_file)
+summary(b5.4)
+```
+
+and again we get the fitted $\mu_i$ to plot them
+
+```{r}
+# get the fit on the original data and
+# add columns to original data to prepare for the plot
+b5.4_fitted <- fitted(b5.4) %>%
+  as_tibble() %>%
+  rename("M_mu" = Estimate,
+         "M_mu_err" = Est.Error,
+         "M_mu_Q2.5" = Q2.5,
+         "M_mu_Q97.5" = Q97.5) %>%
+  bind_cols(d[, c("D", "A", "M")]) %>%
+  mutate(M_res = M - M_mu)
+# glimpse(b5.4_fitted)
+```
+
+and plot the divorce against the  marriage rate residuals, free from the age
+effect
+
+```{r}
+colr <- unclass(paletteer::paletteer_d("calecopal::buow"))
+b5.4_pA <- ggplot(data = b5.4_fitted, aes(x = A, y = M)) +
+  geom_point(aes(color = D)) +
+  geom_segment(aes(xend = A, yend = M_mu), size = 0.5, color = "pink") +
+  geom_line(aes(y = M_mu), color = "pink4") +
+  scale_color_gradientn(colors = colr) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "Median age (standardized)",
+       y = "Marriage rate (standardized)",
+       title = "Residual plot:  Marriage rate vs Median age")
+```
+so now we use the residuals of the marriage rate to represent marriage **free of
+any influence by the median age of marriage**
+
+We use the `residuals()` function which is an alias of `predictive_error()`
+but **don't use `predictive_error()`** as it return the error for every
+posterior sample and every observation.  We just want the **expected** for 
+every initial observations od $D$.
+
+```{r}
+b5.4_res <- residuals(b5.4) %>%
+  as_tibble() %>%
+  bind_cols(d[, c("D", "A", "M")])
+# glimpse(b5.4_res)
+```
+
+`residuals()` return the same values as `fitted`, the difference is that with
+`fitted`, the residuals have to be calculated
+
+```{r}
+near(sum(b5.4_fitted$M_res - b5.4_res$Estimate), 0)
+```
+
+and so we can now plot the divorce against the *marriage rate residuals*
+
+```{r}
+colr <- unclass(paletteer::paletteer_d("calecopal::buow"))
+b5.4_pB <- ggplot(data = b5.4_res, aes(x = Estimate, y = D)) +
+  stat_smooth(method = "lm", fullrange = TRUE, fill = "wheat") +
+  geom_point(aes(color = D)) +
+  scale_color_gradientn(colors = colr) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = "residual of marriage rate",
+       y = "divorce",
+       title = "Predictor residual plot: Divorce vs Marriage rate")
+```
+
+which allows us to conclude that the *marriage rate seems to have little impact
+on the divorce rate.
+
+```{r}
+# cowplot::plot_grid(b5.4_pA , b5.4_pB)
+b5.4_pA + b5.4_pB
+```
+
+
+#### Posterior prediction plots
+
+
+the fitted estimate with residuals
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_03.rds")  # rds file location
+b5.3 <- readRDS(file = a_file)  # load the file
+b5.3_fitted <- fitted(b5.3) %>%
+  as_tibble() %>%
+  bind_cols(d)
+```
+
+
+```{r}
+ggplot(data = b5.3_fitted, aes(x = D, y = Estimate)) +
+  geom_point(color = "firebrick4") +
+  geom_linerange(aes(ymin = Estimate - Est.Error, ymax = Estimate + Est.Error),
+                 color = "firebrick3") +
+  geom_abline(slope = 1, linetype = "dashed", color = "darkorchid") +
+  theme_classic() +
+  labs(title = "Posterior Predictive Plot: Divorce rate",
+       x = "observed divorce",
+       y = "predicted divorce")
+```
+
+
+
+#### Counterfactual plots
+
+We are using the same DAG as above
+
+```{r}
+dag1_coord <- data.frame(
+  name = c("A", "D", "M"),
+  x = c(1, 2, 3),
+  y = c(2, 1, 2)
+)
+dag1 <- ggdag::dagify(M ~ A,
+                      D ~ A + M,
+                      coords = dag1_coord) %>%
+  ggdag::ggdag(node_size = 8) +
+  ggthemes::theme_solid(fill = "snow2")
+ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_dag_point(aes(color = name)) +
+  scale_color_paletteer_d("calecopal::kelp1") +
+  scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  scale_y_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
+  geom_dag_text(color = "midnightblue") +
+  geom_dag_edges(edge_color = "midnightblue") +
+  ggthemes::theme_solid(fill = "snow2") +
+  theme(legend.position = "none")
+```
+
+The full model implies 2 effects, $A$ on $M$ and $D$ and $A$ on $M$.  in other words
+2 structural equations are involved or expressed differently, 2 formula in `brms`
+
+
+```{r}
+d_model <- brms::bf(D ~ 1 + A + M)
+m_model <- brms::bf(M ~ 1 + A)
+```
+
+The `set_rescor(FALSE` indicates that we do not want `brms` to add the residual
+correlation between $D$ and $M$.
+
+Also the argument `resp` is used to identify the response.
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_03A.rds")
+b5.3A <- readRDS(a_file)
+# b5.3A <- brm(data = d, 
+#              family = gaussian,
+#       d_model + m_model + set_rescor(FALSE),
+#       prior = c(prior(normal(0, 0.2), class = Intercept, resp = D),
+#                 prior(normal(0, 0.5), class = b, resp = D),
+#                 prior(exponential(1), class = sigma, resp = D),
+#                 
+#                 prior(normal(0, 0.2), class = Intercept, resp = M),
+#                 prior(normal(0, 0.5), class = b, resp = M),
+#                 prior(exponential(1), class = sigma, resp = M)),
+#       iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#       seed = 5)
+# saveRDS(b5.3A, file = a_file)
+summary(b5.3A)
+```
+
+We manipulate by fixing $M=0$
+
+```{r}
+D_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30),
+                    M = 0)
+b5.3A_D_predict <- predict(b5.3A, resp = "D", newdata = D_seq) %>%
+  data.frame() %>%
+  bind_cols(D_seq)
+p1 <- ggplot(b5.3A_D_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
+  coord_cartesian(ylim = c(-2, 2)) +
+  ggthemes::theme_clean() +
+  labs(title = "Total conterfactual effect of A on D",
+       x = "Manipulated A", y = "Counterfactual D")
+# p1
+```
+
+
+
+```{r}
+M_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30))
+b5.3A_M_predict <- predict(b5.3A, resp = "M", newdata = M_seq) %>%
+  data.frame() %>%
+  bind_cols(M_seq)
+p2 <- ggplot(b5.3A_M_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
+  coord_cartesian(ylim = c(-2, 2)) +
+  ggthemes::theme_clean() +
+  labs(title = "Total conterfactual effect of A on M",
+       x = "Manipulated A", y = "Counterfactual D")
+```
+
+```{r}
+p1 + p2
+```
+
+
+## Masked relationship
+
+Load data and look at the pair plot. We use `GGally::pairs()` which gives
+better information and formatting options.
+
+But first, as mentioned on p. 136, we need to remove missing values which
+cause problems when plotting and in modeling.
+
+```{r}
+data(milk)
+d <- milk %>%
+  tidyr::drop_na() %>%
+  mutate(K = as.vector(scale(kcal.per.g)),
+         N = as.vector(scale(neocortex.perc)),
+         M = as.vector(scale(log(mass))))
+# it should give us a dataframe with 17 rows
+stopifnot(nrow(d) == 17)
+# glimpse(d)
+```
+
+```{r}
+GGally::ggpairs(d[, c("K", "N", "M")]) +
+  ggthemes::theme_fivethirtyeight()
+```
+
+the model
+
+### Model 5.5
+
+$$
+\begin{align*}
+K &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_N \cdot N_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_N &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+and the fit is
+
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_05.rds")  # rds file location
+b5.5 <- readRDS(file = a_file)
+# b5.5 <- brm(
+#   data = d,
+#   formula = K ~ 1 + N,
+#   family = gaussian(),
+#   prior = c(
+#     prior(normal(0, 0.2), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 5
+# )
+# saveRDS(b5.5, file = a_file)
+print(b5.5, digits = 3)
+```
+
+and show the coefficient plot
+
+```{r}
+tidybayes::get_variables(b5.5)
+```
+
+
+
+```{r}
+b5.5_postlong <- b5.5 %>%
+  tidybayes::gather_draws(b_Intercept, b_N, sigma)
+b5.5_post_hist <- ggplot(b5.5_postlong, aes(x = .value)) +
+  stat_halfeye(aes(fill = .variable), point_interval = mean_hdi, .width = 0.89) +
+  scale_fill_paletteer_d(palette = "calecopal::dudleya") +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.25)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  facet_wrap(. ~ .variable, ncol = 1, scales = "fixed")
+b5.5_post_hist
+```
+
+fit for different confidence intervals
+
+```{r}
+N_seq <- data.frame(N = seq(from = -2, to = 2, length.out = 30))
+b5.5_fitted <- N_seq %>%
+  fitted(object = b5.5, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
+  as_tibble() %>%
+  bind_cols(N_seq)
+```
+
+
+and plot the fit
+
+```{r}
+p1 <- ggplot(b5.5_fitted, aes(x = N, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "plum1") +
+  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "plum") +
+  geom_line(color = "plum4", size = 1) +
+  geom_point(data = b5.5$data, aes(x = N, y = K),
+             color = "steelblue4", size = 2) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  coord_fixed(xlim = c(-2, 2), ylim = c(-2, 2)) +
+  ggthemes::theme_few() +
+  labs(title = "Model 5.5", subtitle = deparse1(b5.5$formula$formula),
+       x = "neocrotex percent (std)", y = "kilocal per g (std)")
+```
+
+
+
+### Model 5.6
+
+$$
+\begin{align*}
+K &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_M \cdot M_i \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_N &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+and the fit is
+
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_06.rds")  # rds file location
+b5.6 <- readRDS(file = a_file)
+# b5.6 <- brm(
+#   data = d,
+#   formula = K ~ 1 + M,
+#   family = gaussian(),
+#   prior = c(
+#     prior(normal(0, 0.2), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 5
+# )
+# saveRDS(b5.6, file = a_file)
+print(b5.6, digits = 3)
+```
+
+and show the coefficient plot
+
+```{r}
+tidybayes::get_variables(b5.6)
+```
+
+
+
+```{r}
+b5.6_postlong <- b5.6 %>%
+  tidybayes::gather_draws(b_Intercept, b_M, sigma)
+b5.6_post_int <- ggplot(b5.6_postlong, aes(x = .value)) +
+  stat_gradientinterval(aes(fill = .variable), point_interval = mean_hdi, .width = 0.89) +
+  scale_fill_paletteer_d(palette = "calecopal::dudleya") +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.25)) +
+  theme_minimal() +
+  theme(legend.position = "none") +
+  facet_wrap(. ~ .variable, ncol = 1, scales = "fixed")
+b5.6_post_int
+```
+
+fit for different confidence intervals
+
+```{r}
+M_seq <- data.frame(M = seq(from = -2, to = 2, length.out = 30))
+b5.6_fitted <- M_seq %>%
+  fitted(object = b5.6, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
+  as_tibble() %>%
+  bind_cols(M_seq)
+```
+
+
+and plot the fit
+
+```{r}
+p2 <- ggplot(b5.6_fitted, aes(x = M, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "plum1") +
+  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "plum") +
+  geom_line(color = "plum4", size = 1) +
+  geom_point(data = b5.6$data, aes(x = M, y = K),
+             color = "steelblue4", size = 2) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  coord_fixed(xlim = c(-2, 2), ylim = c(-2, 2)) +
+  ggthemes::theme_few() +
+  labs(title = "Model 5.6", subtitle = deparse1(b5.6$formula$formula),
+       x = "body mass (std of log)", y = "kilocal per g (std)")
+```
+
+
+```{r}
+p1 + p2
+```
+
+
+### Model 5.7
+
+
+$$
+\begin{align*}
+K_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_N \cdot N_i + \beta_M \cdot log(M_i) \\
+\alpha &\sim \mathcal{N}(0, 0.2) \\
+\beta_N &\sim \mathcal{N}(0, 0.5) \\
+\beta_M &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+and the fit is
+
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b05_07.rds")
+b5.7 <- readRDS(file = a_file)
+# b5.7 <- brm(
+#   data = d,
+#   formula = K ~ 1 + N + M,
+#   family = gaussian(),
+#   prior = c(
+#     prior(normal(0, 0.2), class = Intercept),
+#     prior(normal(0, 0.5), class = b),
+#     prior(cauchy(0, 0.5), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 5
+# )
+# saveRDS(b5.7, file = a_file)
+print(b5.7, digits = 3)
+```
+
+get the conterfactual data **holding $N = 0$**
+
+```{r}
+N_seq <- data.frame(N = seq(from = -2.5, to = 2.5, length.out = 30),
+                    M = 0)
+b5.7_fitted_N <- N_seq %>%
+  fitted(object = b5.7, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
+  as_tibble() %>%
+  bind_cols(N_seq)
+# glimpse(b5.7_fitted_N)
+```
+
+and the plot
+
+```{r}
+p1 <- ggplot(b5.7_fitted_N, aes(x = N, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "burlywood1") +
+  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "burlywood") +
+  geom_line(color = "burlywood4", size = 1) +
+  geom_point(data = b5.7$data, aes(x = N, y = K),
+             color = "steelblue4", size = 2) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  coord_fixed(xlim = c(-2.5, 2.5), ylim = c(-2.5, 2.5)) +
+  ggthemes::theme_few() +
+  labs(title = "Model 5.7 - Counterfactual holding M = 0", 
+       subtitle = deparse1(b5.7$formula$formula),
+       x = "neocortex percent (std)", y = "kilocal per g (std)")
+# p1
+```
+
+
+get the conterfactual data **holding $N = 0$**
+
+```{r}
+M_seq <- data.frame(M = seq(from = -2.5, to = 2.5, length.out = 30),
+                    N = 0)
+b5.7_fitted_M <- M_seq %>%
+  fitted(object = b5.7, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
+  as_tibble() %>%
+  bind_cols(M_seq)
+```
+
+and the plot
+
+```{r}
+p2 <- ggplot(b5.7_fitted_M, aes(x = M, y = Estimate)) +
+  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "burlywood1") +
+  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "burlywood") +
+  geom_line(color = "burlywood4", size = 1) +
+  geom_point(data = b5.7$data, aes(x = M, y = K),
+             color = "steelblue4", size = 2) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
+  coord_fixed(xlim = c(-2.5, 2.5), ylim = c(-2.5, 2.5)) +
+  ggthemes::theme_few() +
+  labs(title = "Model 5.7 - Counterfactual holding N = 0", 
+       subtitle = deparse1(b5.7$formula$formula),
+       x = "body mass (std of log)", y = "kilocal per g (std)")
+# p2
+```
+
+
+```{r}
+p1 + p2
+```
+
+
+
+## Categorical variables
+
+
+### Binary categories
+
+Load data
+
+```{r}
+data("Howell1")
+d <- Howell1 %>%
+  mutate(sex = factor(male))
+glimpse(d)
+```
+
+the model
+$$
+\begin{align*}
+h_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha_{sex[i]} \\
+\alpha &\sim \mathcal{N}(178, 20) \\
+\beta_m &\sim \mathcal{N}(0, 10) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+
+```{r}
+a_file <- here::here("fits", "b05_08.rds")
+b5.8 <- readRDS(file = a_file)
+# b5.8 <- brm(
+#   data = d,
+#   formula = height ~ 0 + sex,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(178, 20), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 5
+# )
+# saveRDS(b5.8, file = a_file)
+summary(b5.8)
+```
+
+> Read the important comment in section 5.3.1 when using $\alpha$. 
+$\alpha$ now represents the average of women and the male heights is more 
+variable because it relates to 2 parameters instead of 1.
+
+### Many categories
+
+> See the overthinking box in section 5.3.2 on how to reparametrize.  Very nice.
+
+Load data, standardize and make sure *clade* is a factor. > With `brms` there 
+is no need to create the contrasts.  We simply make sure that `*clade* is a factor.
+`brms` wil create the contrasts by itself.
+
+```{r}
+data("milk")
+d <- milk %>% 
+  mutate(K = as.vector(scale(kcal.per.g)))
+# glimpse(d)
+stopifnot(is.factor(d$clade))
+```
+
+
+the model
+$$
+\begin{align*}
+K_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha_{clade[i]} \\
+\alpha_j &\sim \mathcal{N}(0, 0.5) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+
+
+
+```{r}
+a_file <- here::here("fits", "b05_09.rds")
+b5.9 <- readRDS(file = a_file)
+# b5.9 <- brm(
+#   data = d,
+#   formula = K ~ 0 + clade,
+#   family = gaussian,
+#   prior = c(
+#     prior(normal(0, 0.5), class = b),
+#     prior(exponential(1), class = sigma)
+#   ),
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 5
+# )
+# saveRDS(b5.9, file = a_file)
+summary(b5.9)
+```
+
+
+```{r}
+tidybayes::get_variables(b5.9)
+```
+
+
+
+```{r}
+b5.9_post <- 
+tidybayes::gather_draws(b5.9, b_cladeApe, b_cladeNewWorldMonkey, 
+                        b_cladeOldWorldMonkey, b_cladeStrepsirrhine) %>%
+  mean_hdi(.width = 0.95) %>%
+  ggplot(aes(x = .value, xmin = .lower, xmax = .upper, y = .variable)) +
+  geom_pointinterval() +
+  ggthemes::theme_clean() + 
+  labs(title = "Expected kcal by clade",
+       x = "kcal (std)", y = "clade")
+b5.9_post
+```
+
+
+
+## Other ways to modify categorical variables
+
+
+See @kurtz2020b
+
+## Summary
