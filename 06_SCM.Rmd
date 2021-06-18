@@ -316,6 +316,66 @@ and we now see more treatment effect.
 ## Collider bias
 
 
+### Collider of false sorrow
+
+```{r}
+d <- rethinking::sim_happiness(seed = 1977, N_years = 1000)
+# select age > 17 and rescale to [0, 1] and create indexed factor
+# creating factor makes it easer with brms
+d2 <- d %>%
+  filter(age > 17) %>%
+  mutate(A = scales::rescale(age, to = c(0, 1)),
+         mid = factor(married + 1, labels = c("single", "married")))
+glimpse(d2)
+```
+
+```{r}
+a_file <- here::here("fits", "b06_09.rds")
+b6.9 <- readRDS(a_file)
+# b6.9 <- 
+#   brm(data = d2, 
+#       family = gaussian,
+#       happiness ~ 0 + mid + A,
+#       prior = c(prior(normal(0, 1), class = b, coef = midmarried),
+#                 prior(normal(0, 1), class = b, coef = midsingle),
+#                 prior(normal(0, 2), class = b, coef = A),
+#                 prior(exponential(1), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#       seed = 6)
+# b6.9 <- brms::add_criterion(b6.9, criterion = c("waic", "loo"))
+# saveRDS(b6.9, file = a_file)
+brms::posterior_summary(b6.9)
+```
+
+The fit finds that the effect of age on happiness is negative
+
+
+now lets do it without the marriage factor
+
+```{r}
+a_file <- here::here("fits", "b06_10.rds")
+b6.10 <- readRDS(a_file)
+# b6.10 <-
+#   brm(data = d2,
+#       family = gaussian,
+#       happiness ~ 1 + A,
+#       prior = c(prior(normal(0, 1), class = Intercept),
+#                 prior(normal(0, 2), class = b),
+#                 prior(exponential(1), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#       seed = 6)
+# b6.10 <- brms::add_criterion(b6.10, criterion = c("waic", "loo"))
+# saveRDS(b6.10, file = a_file)
+brms::posterior_summary(b6.10)
+```
+
+Now the age has no effect on happiness!  When we include marriage, we include a 
+spurious association.
+
+
+### The haunted DAG
+
+
 
 
 
