@@ -85,12 +85,16 @@ tidybayes::gather_draws(b6.1, b_Intercept, b_leg_left, b_leg_right, sigma) %>%
   mean_hdi(.width = 0.95) %>%
   ggplot(aes(x = .value, xmin = .lower, xmax = .upper, y = .variable, color = .variable)) +
   geom_pointinterval() +
+  ggrepel::geom_text_repel(aes(label = round(.value, 2))) +
   scale_color_paletteer_d("Manu::Kereru") +
-  ggthemes::theme_clean() +
-  theme(legend.position = "none") +
+  ggthemes::theme_few() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = "none",
+        panel.border = element_blank()) +
   labs(title = "Leg model",
        x = "value", y = NULL)
 ```
+
 
 
 ### Multicollinear milk

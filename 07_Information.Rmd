@@ -375,9 +375,11 @@ w <- loo::loo_compare(b6.6, b6.7, b6.8, criterion = "waic") %>%
     tibble::rownames_to_column("model_name") %>%
     mutate(model_name = forcats::fct_reorder(model_name, waic, .desc = TRUE))
 ggplot(w, aes(x = waic, y = model_name, xmin = waic - se_waic, xmax = waic + se_waic)) +
-    geom_pointrange(shape = 19) +
-    ggthemes::theme_clean() +
-    theme(title = element_text(color = "midnightblue")) +
+    geom_pointrange(shape = 19, size = 0.75, color = "mediumseagreen") +
+    ggrepel::geom_text_repel(aes(label = round(waic, 0))) +
+    ggthemes::theme_few() +
+    theme(title = element_text(color = "midnightblue"),
+          panel.border = element_blank()) +
     labs(title = "WAIC plot", x = "waic", y = NULL)
 ```
 
