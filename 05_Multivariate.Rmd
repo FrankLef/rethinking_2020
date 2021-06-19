@@ -4,8 +4,8 @@ library(tidyr, quietly = TRUE)
 library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
-library(ggdag, quietly = TRUE)
 library(dagitty, quietly = TRUE)
+library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
 library(patchwork, quietly = TRUE)
 library(paletteer, quietly = TRUE)
@@ -671,7 +671,7 @@ b5.5 <- readRDS(file = a_file)
 # b5.5 <- brm(
 #   data = d,
 #   formula = K ~ 1 + N,
-#   family = gaussian(),
+#   family = gaussian,
 #   prior = c(
 #     prior(normal(0, 0.2), class = Intercept),
 #     prior(normal(0, 0.5), class = b),
@@ -756,7 +756,7 @@ b5.6 <- readRDS(file = a_file)
 # b5.6 <- brm(
 #   data = d,
 #   formula = K ~ 1 + M,
-#   family = gaussian(),
+#   family = gaussian,
 #   prior = c(
 #     prior(normal(0, 0.2), class = Intercept),
 #     prior(normal(0, 0.5), class = b),
@@ -847,7 +847,7 @@ b5.7 <- readRDS(file = a_file)
 # b5.7 <- brm(
 #   data = d,
 #   formula = K ~ 1 + N + M,
-#   family = gaussian(),
+#   family = gaussian,
 #   prior = c(
 #     prior(normal(0, 0.2), class = Intercept),
 #     prior(normal(0, 0.5), class = b),
