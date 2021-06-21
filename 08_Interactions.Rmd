@@ -101,29 +101,121 @@ $$
 Now fit the model. Get the **rpior samples** by using `sample_prior = TRUE`
 
 ```{r}
-a_file <- here::here("fits", "b08_01.rds")
-# b8.1 <- readRDS(file = a_file)
-b8.1 <- brm(
-  data = dd,
-  family = gaussian,
-  log_gdp_s ~ 1 + rugged_sc,
-  prior = c(
-    prior(normal(1, 1), class = Intercept),
-    prior(normal(0, 1), class = b),
-    prior(exponential(1), class = sigma)
-    ),
-  sample_prior = TRUE,
-  iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
-  seed = 8
-  )
-b8.1 <- brms::add_criterion(b8.1, criterion = c("waic", "loo"))
-saveRDS(b8.1, file = a_file)
-posterior_summary(b8.1)
+a_file <- here::here("fits", "b08_01a.rds")
+b8.1a <- readRDS(file = a_file)
+# b8.1a <- brm(
+#   data = dd,
+#   family = gaussian,
+#   log_gdp_s ~ 1 + rugged_sc,
+#   prior = c(
+#     prior(normal(1, 1), class = Intercept),
+#     prior(normal(0, 1), class = b),
+#     prior(exponential(1), class = sigma)
+#     ),
+#   sample_prior = TRUE,
+#   iter = 2000, warmup = 1000, chains = 4, cores = detectCores(),
+#   seed = 8
+#   )
+# b8.1a <- brms::add_criterion(b8.1a, criterion = c("waic", "loo"))
+# saveRDS(b8.1a, file = a_file)
+posterior_summary(b8.1a)
 ```
 
 
 
+the estimates are described in section 8.1.1 of McElreath but he seems to have
 
+```{r}
+set.seed(8)
+b8.1a_prior <- prior_samples(b8.1a)
+pd <-
+  b8.1a_prior %>%
+  slice_sample(n = 50) %>%
+  tibble::rownames_to_column() %>%
+  expand(nesting(rowname, Intercept, b), rugged_sc = c(-2, 2)) %>%
+  mutate(log_gdp_s = Intercept + b * rugged_sc,
+         rugged_s  = rugged_sc + mean(dd$rugged_s))
+# glimpse(pd)
+
+pd_estimate_fixed <- min(dd$log_gdp_s)
+pd_estimate_b <- diff(range(dd$log_gdp_s))
+
+p1 <- ggplot(pd, aes(x = rugged_s, y = log_gdp_s, group = rowname)) +
+  geom_line(color = "lavender") +
+  geom_hline(yintercept = range(dd$log_gdp_s), 
+             size = 1, linetype = 2, color = "royalblue") +
+  geom_abline(intercept = pd_estimate_fixed, slope = pd_estimate_b,
+              color = "purple", size = 1) +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0.5, 1.5)) +
+  labs(
+    subtitle = "Intercept ~ dnorm(1, 1)\nb ~ dnorm(0, 1)",
+    x = "ruggedness (rescaled)",
+    y = "log GDP (prop of mean)") +
+  ggthemes::theme_hc()
+# p1
+```
+
+Now using the prior where we want the intercept to be around 1 (i.e. a mean of 1
+and sd of 0.1) and the slope to have an extreme about 0.6 
+(i.e. 2 sd from a mean of 0).
+
+
+```{r}
+a_file <- here::here("fits", "b08_01b.rds")
+b8.1b <- readRDS(file = a_file)
+# b8.1b <- update(
+#   b8.1a,
+#   newdata = dd,
+#   prior = c(
+#     prior(normal(1, 0.1), class = Intercept),
+#     prior(normal(0, 0.3), class = b),
+#     prior(exponential(1), class = sigma)
+#     ),
+#   sample_prior = TRUE,
+#   seed = 8
+#   )
+# b8.1b <- brms::add_criterion(b8.1b, criterion = c("waic", "loo"))
+# saveRDS(b8.1b, file = a_file)
+posterior_summary(b8.1b)
+```
+
+
+```{r}
+set.seed(8)
+b8.1b_prior <- prior_samples(b8.1b)
+pd <-
+  b8.1b_prior %>%
+  slice_sample(n = 50) %>%
+  tibble::rownames_to_column() %>%
+  expand(nesting(rowname, Intercept, b), rugged_sc = c(-2, 2)) %>%
+  mutate(log_gdp_s = Intercept + b * rugged_sc,
+         rugged_s  = rugged_sc + mean(dd$rugged_s))
+# glimpse(pd)
+
+p2 <- ggplot(pd, aes(x = rugged_s, y = log_gdp_s, group = rowname)) +
+  geom_line(color = "lavender") +
+  geom_hline(yintercept = range(dd$log_gdp_s), 
+             size = 1, linetype = 2, color = "royalblue") +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0.5, 1.5)) +
+  labs(
+    subtitle = "Intercept ~ dnorm(0, 0.1)\nb ~ dnorm(0, 0.3)",
+    x = "ruggedness (rescaled)",
+    y = "log GDP (prop of mean)") +
+  ggthemes::theme_hc()
+# p2
+```
+
+
+```{r}
+msg <- "Figure 8.3. Simulating different priors to evaluate their fit"
+p1 + p2 + plot_annotation(title = msg)
+```
+
+### Adding an indicator variable isn't enough
+
+```{r}
+warning("TODO")
+```
 
 
 
