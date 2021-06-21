@@ -157,7 +157,8 @@ p1 <- ggplot(pd, aes(x = rugged_s, y = log_gdp_s, group = rowname)) +
 
 Now using the prior where we want the intercept to be around 1 (i.e. a mean of 1
 and sd of 0.1) and the slope to have an extreme about 0.6 
-(i.e. 2 sd from a mean of 0).
+(i.e. 2 sd with sd = 3 from a mean of 0).  This is slightly different than McElreath
+who assumes the average is 0.6 right from the start.
 
 
 ```{r}
