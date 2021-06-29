@@ -390,13 +390,13 @@ ggplot(dd, aes(x = rugged_sc, y = log_gdp_s, fill = is_africa, color = is_africa
   geom_point(size = 1) +
   scale_fill_manual(values = c("Africa" = "springgreen2", "Not Africa" = "violet")) +
   scale_color_manual(values = c("Africa" = "springgreen2", "Not Africa" = "violet")) +
-  labs(subtitle = "b8.2",
-       x = "ruggedness (standardized)",
-       y = "log GDP (as proportion of mean)") +
   coord_cartesian(xlim = c(0, 1)) +
   theme_minimal() +
   theme(legend.position = "none") +
-  labs(title = "Figure 8.5", subtitle = "model b8.3") +
+  labs(title = "Figure 8.5",
+       subtitle = "model b8.3",
+       x = "ruggedness (standardized)",
+       y = "log GDP (as proportion of mean)") +
   facet_wrap(~ is_africa)
 ```
 
@@ -430,8 +430,8 @@ Our preliminary model, as a first jest in terms of prior is
 
 $$
 \begin{align*}
-blooms\_r &= \mathcal{N}(\mu_i, \sigma) \\
-\mu_i &\sim \alpha + \beta_W \cdot water\_c_i+ \beta_S \cdot shade\_c_i \\
+blooms\_r_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_W \cdot water\_c_i+ \beta_S \cdot shade\_c_i \\
 \alpha &\sim \mathcal{N}(0.5, 1) \\
 \beta_W &\sim \mathcal{N}(0, 1) \\
 \beta_S &\sim \mathcal{N}(0, 1) \\
@@ -483,8 +483,8 @@ Therefore, our model with a little more informative priors is
 
 $$
 \begin{align*}
-blooms\_r &= \mathcal{N}(\mu_i, \sigma) \\
-\mu_i &\sim \alpha + \beta_W \cdot water\_c_i+ \beta_S \cdot shade\_c_i \\
+blooms\_r_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta_W \cdot water\_c_i+ \beta_S \cdot shade\_c_i \\
 \alpha &\sim \mathcal{N}(0.5, 0.25) \\
 \beta_W &\sim \mathcal{N}(0, 0.25) \\
 \beta_S &\sim \mathcal{N}(0, 0.25) \\
@@ -522,8 +522,8 @@ the new model with interactions
 
 $$
 \begin{align*}
-blooms\_r &= \mathcal{N}(\mu_i, \sigma) \\
-\mu_i &\sim 
+blooms\_r_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= 
  \alpha + \gamma_{W, i} \cdot water\_c_i+ \beta_S \cdot shade\_c_i =
  \alpha + \beta_W \cdot water\_c_i + \beta_S \cdot shade\_c_i + \beta_{WS} \cdot shade\_c_i \cdot water\_c_i
  \\
@@ -593,14 +593,11 @@ df <- rbind(fitted(b8.4, newdata = nd, summary = F, nsamples = 20),
   
 
 ggplot(df, aes(x = water_c, y = blooms_r)) +
-  geom_line(aes(group = row),
-            color = "steelblue", alpha = 1/5, size = 1/2) +
-  geom_point(data = points,
-           color = "steelblue") +
+  geom_line(aes(group = row), color = "steelblue", alpha = 1/5, size = 1/2) +
+  geom_point(data = points, color = "steelblue") +
   scale_x_continuous(breaks = c(-1, 0, 1)) +
   scale_y_continuous(breaks = c(0, .5, 1)) +
-  coord_cartesian(xlim = c(-1, 1),
-                ylim = c(0, 1)) +
+  coord_cartesian(xlim = c(-1, 1), ylim = c(0, 1)) +
   theme_minimal() +
   theme(legend.position = "none",
         strip.background = element_rect(fill = "pink")) +
