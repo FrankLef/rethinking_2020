@@ -434,7 +434,7 @@ ggplot(dp, aes(x = pareto_k, y = p_waic, color = Loc == "ID")) +
     theme_minimal() +
     theme(legend.position = "none") +
     labs(title = "Gaussian model (b5.3)",
-         subtitle = "using brms (see Kurtz)",
+         subtitle = deparse1(b5.3$formula$formula),
          caption = "Different than McElreath but ok with Kurtz (same conclusions for both)")
 ```
 

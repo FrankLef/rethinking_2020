@@ -105,7 +105,7 @@ $$
 \end{align*}
 $$
 
-Now fit the model. Get the **rpior samples** by using `sample_prior = TRUE`
+Now fit the model. Get the **prior samples** by using `sample_prior = TRUE`
 
 ```{r}
 a_file <- here::here("fits", "b08_01a.rds")
@@ -410,6 +410,8 @@ ggplot(dd, aes(x = rugged_sc, y = log_gdp_s, fill = is_africa, color = is_africa
 ## Continuous interactions
 
 
+
+
 ### A winter flower
 
 ```{r}
@@ -453,7 +455,7 @@ m <- 0.5
 s <- 1
 pnorm(q = 0, mean = m, sd = s) + pnorm(q = 1, mean = m, sd = s, lower.tail = FALSE)
 ```
-lets say that we we wnat only 5% of the values outside the range (2.5% on each side)
+lets say that we we want only 5% of the values outside the range (2.5% on each side)
 then, going with trial an error, the boundaries would be about
 
 ```{r}
