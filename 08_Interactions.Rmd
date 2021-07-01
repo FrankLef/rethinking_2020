@@ -303,14 +303,14 @@ ggplot(dd, aes(x = rugged_sc, y = log_gdp_s, fill = is_africa, color = is_africa
   geom_point(size = 1) +
   scale_fill_manual(values = c("Africa" = "springgreen2", "Not Africa" = "violet")) +
   scale_color_manual(values = c("Africa" = "springgreen2", "Not Africa" = "violet")) +
-  labs(subtitle = "b8.2",
-       x = "ruggedness (standardized)",
-       y = "log GDP (as proportion of mean)") +
   coord_cartesian(xlim = c(0, 1)) +
   theme_minimal() +
   theme(legend.position = c(.80, .90),
         legend.title = element_blank()) +
-  labs(title = "Figure 8.4", subtitle = "model b8.2")
+  labs(title = "Figure 8.4",
+       subtitle = "model b8.2",
+       x = "ruggedness (standardized)",
+       y = "log GDP (as proportion of mean)")
 ```
 
 
