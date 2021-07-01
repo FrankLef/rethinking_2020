@@ -581,7 +581,8 @@ set.seed(8)
 df <- rbind(fitted(b8.4, newdata = nd, summary = F, nsamples = 20),
             fitted(b8.5, newdata = nd, summary = F, nsamples = 20)) %>%
   data.frame() %>%
-  rlang::set_names(mutate(nd, name = paste(shade_c, water_c, sep = "_")) %>% pull()) %>%
+  rlang::set_names(mutate(nd, name = paste(shade_c, water_c, sep = "_")) %>% 
+                     pull()) %>%
   mutate(row = 1:n(),
          fit = rep(c("b8.4", "b8.5"), each = n() / 2)) %>%
   pivot_longer(-c(row:fit), values_to = "blooms_r") %>%
