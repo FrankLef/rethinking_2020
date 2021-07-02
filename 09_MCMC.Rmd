@@ -25,6 +25,7 @@ positions <- integer(1e5)
 positions[1] <- 10
 for (i in 1:length(positions - 1)) {
   # step 1: flip a coin
+  set.seed(10 * i)
   coin <- sample(x = c(-1, 1), size = 1)
   # step 2: nominate the proposal island
   #         we use modulo arithmetic to simulate a clock
@@ -46,13 +47,12 @@ itinerary <- data.frame(
   week = seq_along(positions),
   island = factor(positions)
 )
-ggplot(data = itinerary[1:100, ], aes(x = week, y = island)) +
+p1 <- ggplot(data = itinerary[1:100, ], aes(x = week, y = island)) +
   geom_point(aes(color = island)) +
-  # scale_y_discrete(breaks = scales::breaks_width(width = 1)) +
   scale_color_paletteer_d(palette = "ggsci::category10_d3") +
   ggthemes::theme_igray() +
   theme(legend.position = "none") +
-  labs(title = "Figure 8.2",
+  labs(title = "Figure 9.2",
        x = "week", y = "island")
 
 ```
@@ -61,19 +61,25 @@ ggplot(data = itinerary[1:100, ], aes(x = week, y = island)) +
 and the frequency of visits to each island
 
 ```{r}
-ggplot(data = itinerary, aes(x = island)) +
+p2 <- ggplot(data = itinerary, aes(x = island)) +
   geom_bar(aes(fill = island), stat = "count") +
-  # scale_y_discrete(breaks = scales::breaks_width(width = 1)) +
   scale_color_paletteer_d(palette = "ggsci::category10_d3") +
   ggthemes::theme_igray() +
   theme(legend.position = "none") +
-  labs(title = "Figure 8.2",
-       x = "island")
+  labs(x = "island", y = "nb of weeks")
 ```
 
 
+which gives figure 9.2
+
+```{r}
+p1 + p2 + 
+  plot_annotation(title = "Figure 9.2", subtitle = "Metropolis algorithm")
+```
 
 ## Metropolis algorithms
+
+
 
 
 
