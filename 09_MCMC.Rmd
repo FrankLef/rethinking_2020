@@ -42,6 +42,7 @@ for (i in seq_len(length(positions))) {
   current <- ifelse(runif(1) < prob_move, proposal, current)
 }
 
+
 # the itinerary dataframe
 itinerary <- data.frame(
   week = seq_along(positions),
@@ -78,7 +79,7 @@ p2 <- ggplot(data = itinerary, aes(x = island)) +
   # scale_color_manual(values = colr) +
   ggthemes::theme_igray() +
   theme(legend.position = "none") +
-  labs(subtitle = sprintf("all %d weeks", nrow(itinerary)),
+  labs(subtitle = sprintf("%d weeks", nrow(itinerary)),
        x = "island", y = "nb of weeks")
 ```
 
@@ -348,11 +349,7 @@ str(dat_slim)
 
 ### Sampling from the posterior
 
-```{r}
-mean(dd$rugged_s)
-```
-
-
+This is easy with `tidybayes`
 
 ```{r}
 a_file <- here::here(getwd(), "fits", "b09_01.rds")
@@ -371,6 +368,72 @@ b9.1 <- readRDS(file = a_file)
 #                   chains = 1, cores = 1, seed = 9)
 # saveRDS(b9.1, file = a_file)
 print(b9.1)
+```
+
+```{r}
+tidybayes::get_variables(b9.1)
+```
+
+Note that we use `mean_hdi()` but there are many more of these functions
+in `ggdist()` (which are actually carried forward in `tidybayes`).
+
+```{r}
+b9.1_post <- tidybayes::gather_draws(model = b9.1,
+                                     b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2,
+                                     sigma) %>%
+  ggdist::mean_hdi(.value, .width = 0.89)
+b9.1_post
+```
+
+### Sampling again, in parallel
+
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b09_01b.rds")
+b9.1b <- readRDS(file = a_file)
+# b9.1b <- update(b9.1, chains = 4, cores = 4, seed = 9)
+# saveRDS(b9.1b, file = a_file)
+print(b9.1b)
+```
+
+and we can see the formula
+
+```{r}
+b9.1b$formula
+# and we can deparse it when plotting
+deparse1(b9.1b$formula$formula)
+```
+and obtain informaiton on the model priors
+
+```{r}
+b9.1b$prior
+```
+
+or using the function provided for this purpose
+
+```{r}
+prior_summary(b9.1b)
+```
+
+### Visualization
+
+We use `GGally`
+
+```{r}
+b9.1b_post <- tidybayes::spread_draws(model = b9.1b, b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2,
+                        sigma) %>%
+  select(.chain, b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2, sigma)
+# glimpse(b9.1b_post)
+p <- GGally::ggpairs(b9.1b_post, columns = c("b_a_cid1", "b_a_cid2", "b_b_cid1", "b_b_cid2", "sigma"), 
+                aes(colour = as.factor(.chain)))
+p
+```
+
+
+### Checking the gain
+
+```{r}
+warning("TODO")
 ```
 
 
