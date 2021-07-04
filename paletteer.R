@@ -81,6 +81,7 @@ paletteer::palettes_c_names$palette[paletteer::palettes_c_names$package == "grDe
 paletteer::palettes_c_names$palette[paletteer::palettes_c_names$package == "futurevisions"]
 paletteer::palettes_c_names$palette[paletteer::palettes_c_names$package == "Manu"]
 paletteer::palettes_c_names$palette[paletteer::palettes_c_names$package == "calecopal"]
+paletteer::palettes_c_names$palette[paletteer::palettes_c_names$package == "lisa"]
 
 # other gradual scales for green and red in this
 tmp$pal <- paletteer::paletteer_c("oompaBase::bluescale", n = 16)

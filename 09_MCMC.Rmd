@@ -8,7 +8,7 @@ library(loo)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
-library(bayesplot, quietly = TRUE)
+library(ggmcmc, quietly = TRUE)
 library(patchwork, quietly = TRUE)
 library(paletteer, quietly = TRUE)
 ```
@@ -417,30 +417,487 @@ prior_summary(b9.1b)
 
 ### Visualization
 
-We use `GGally`
+We use `GGally`. It can also be done using the `ggmcmc` package with `ggs_pairs`.
+The `bayesplot` package also has many different plots.  It is more sophisticated than
+`ggmcmc` with some vignettes explaining how to diagnose the chains.
+
+For this we choose to used `ggmcmc` which has trank plot and provides the wartmup.
+
+Also note that Solomon Kurtz @kurtz2020b has a lot more options and recipes
+about all of these plots.  It is worthwhile reading before losing time finding
+solutions on the web.
 
 ```{r}
-b9.1b_post <- tidybayes::spread_draws(model = b9.1b, b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2,
+b9.1b_postwide <- tidybayes::spread_draws(model = b9.1b, b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2,
                         sigma) %>%
   select(.chain, b_a_cid1, b_a_cid2, b_b_cid1, b_b_cid2, sigma)
-# glimpse(b9.1b_post)
-p <- GGally::ggpairs(b9.1b_post, columns = c("b_a_cid1", "b_a_cid2", "b_b_cid1", "b_b_cid2", "sigma"), 
-                aes(colour = as.factor(.chain)))
-p
+# glimpse(b9.1b_postwide)
+# p <- GGally::ggpairs(b9.1b_post, columns = c("b_a_cid1", "b_a_cid2", "b_b_cid1", "b_b_cid2", "sigma"), 
+#                 aes(colour = as.factor(.chain)))
+# p
+b9.1b_pairs <- GGally::ggscatmat(b9.1b_postwide,
+                  columns = c("b_a_cid1", "b_a_cid2", "b_b_cid1", "b_b_cid2", "sigma"),
+                  color = ".chain") + 
+  scale_color_paletteer_d("lisa::LeeKrasner") +
+  theme_minimal() +
+  labs(title = "Model b9.1b")
+b9.1b_pairs
 ```
 
-
-### Checking the gain
+and the crosscorrelations which could also be done with `ggmcmc` but are a little
+mode flexible to use with `GGally`, in particular we can get in lower triable
+format
 
 ```{r}
-warning("TODO")
+b9.1b_corr <- GGally::ggcorr(b9.1b_postwide[, c("b_a_cid1", "b_a_cid2", "b_b_cid1", "b_b_cid2", "sigma")],
+                            color = "darkgreen",
+                            nbreaks = 13, label = TRUE, label_round = 2,
+                            label_color = "midnightblue") +
+  scale_fill_paletteer_d(palette = "ggthemr::dust") +
+  theme(legend.position = c(0.1, 0.8),
+        legend.title = element_blank(),
+        title = element_text(color = "midnightblue")) +
+  labs(title = "Correlations between parameters",
+       subtitle = "Model b9.1b")
+b9.1b_corr
 ```
 
+
+
+### Checking the chain
+
+The `ggmcmc` package always starts with the `ggs()` function which extract
+the posterior draws and organize them in a tibble. The `ggmcmc` is very useful
+with family of parametrs. i.e.e parameter which are indexed.  See the `family`
+argument in the `ggs` functions.
+
+See more info on `ggmcmc` at [ggmcmc](https://cran.r-project.org/web/packages/ggmcmc/vignettes/using_ggmcmc.html)
+
+```{r}
+b9.1b_ggs <- ggmcmc::ggs(b9.1b)
+str(b9.1b_ggs)
+```
+
+
+
+#### Trace plot
+
+```{r}
+ggs_traceplot(b9.1b_ggs) +
+  scale_color_paletteer_d("lisa::LeeKrasner") +
+  theme_minimal() +
+  # ggthemes::theme_clean() +
+  labs(title = "Trace plot",
+       subtitle = "Model b9.1b", color = "chain")
+```
+
+#### Trank plot
+
+This is a special case, only done with `bayesplot`.  See how it is
+done in section 9.4.5 of @kurtz2020b.
+
+You have to read section 9.5.3, Figure 9.9, to understand how to read a
+trank plot.
+
+```{r}
+b9.1b_post <- posterior_samples(b9.1b, add_chain = TRUE)
+b9.1b_post %>% 
+  bayesplot::mcmc_rank_overlay(pars = vars(b_a_cid1:sigma)) +
+  # scale_color_pomological() +
+  scale_color_paletteer_d("lisa::LeeKrasner") +
+  coord_cartesian(ylim = c(25, NA)) +
+  theme(legend.position = c(.95, .20)) +
+  labs(title = "Trank plot",
+       subtitle = "Model b9.1b", color = "chain")
+```
+
+
+#### Running means
+
+
+```{r}
+ggs_running(b9.1b_ggs) +
+  scale_color_paletteer_d("lisa::LeeKrasner") +
+  theme_minimal() +
+  labs(title = "Running means",
+       subtitle = "Model b9.1b", color = "chain")
+```
+
+
+
+### Crosscorrelations
+
+I prefer the crosscorrelaion plot as done with `GGally` above, with lower triangle
+
+```{r}
+ggs_crosscorrelation(b9.1b_ggs) +
+  scale_fill_paletteer_c("grDevices::Emrld", direction = -1) +
+  theme_minimal() +
+  labs(title = "Crosscorrelations",
+       subtitle = "Model b9.1b", color = "chain")
+```
+
+#### Autocorrelations
+
+```{r}
+b9.1b_ggs %>%
+  ggs_autocorrelation() +
+  scale_fill_paletteer_d("lisa::LeeKrasner") +
+  scale_color_paletteer_d("lisa::LeeKrasner", guide = FALSE) +
+  theme_minimal() + 
+  labs(title = "Autocorrelations",
+       subtitle = "Model b9.1b", color = NULL, fill = "chain")
+```
+
+#### Overthinking: Raw Stan model code
+
+We can use the `brms::stancode()` function to get the stan code from
+the `brmsfit` object
+
+```{r}
+brms::stancode(b9.1b)
+```
 
 
 ## Care and feeding of your Markov chain
 
+The `brms` defaults are `iter = 2000` and `warmup = 1000`.
 
+### How many samples do you need
+
+In `brms` the `n_eff` mentioned by McElreath is `bulk_ESS`.  The *tail ESS* 
+discussed by McElreath is the `tail_ESS` value in `brms`.
+
+### How many chains do you need
+
+For more information on convergence statistics $\mathcal{\widehat{R}}$ see
+section 9.5.2.1 in @kurtz2020b.
+
+
+## Taming a wild chain
+
+The `start` argument in `rethinking` is replaced by `inits` in `brms`.
+The simple example of a wild chain is as follows.  Note that `brms` can take
+data in the form of a list.
+
+I find much easier to understand the issues by looking at the autocorrelation
+and the mean plots created with `ggmcmc::ggs_running()` and `ggmcmc::ggs_autocorrelation()`.
+They will be used often in this work to visualize the Markov chain.
+
+#### Divergent transitions
+
+We create a model that has poor priors
+
+$$
+\begin{align*}
+y_i &\sim \mathcal{N}(\mu, \sigma) \\
+\mu &= \alpha \\
+\alpha &\sim \mathcal{N}(1, 1000) \\
+\sigma &\sim \mathcal{Exp}(0.0001)
+\end{align*}
+$$
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b09_02.rds")
+b9.2 <- readRDS(file = a_file)
+# b9.2 <-
+#   brm(data = list(y = c(-1, 1)), 
+#       family = gaussian,
+#       y ~ 1,
+#       prior = c(prior(normal(0, 1000), class = Intercept),
+#                 prior(exponential(0.0001), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 3, seed = 9)
+# saveRDS(b9.2, file = a_file)
+summary(b9.2)
+```
+
+The results are pretty bad, just like McElreath wanted them.  The `brms::nuts_params()`
+provide much diagnostic informations.  The type of information is in the
+`Parameter` column.
+
+```{r}
+nuts_params(b9.2) %>% 
+  distinct(Parameter)
+```
+
+In the current case, the divergent transitions are the issue.  For this
+we look at `Parameter == "divergent__"`.
+
+```{r}
+nuts_params(b9.2) %>%
+  filter(Parameter == "divergent__") %>%
+  count(Value)
+```
+
+and plotting the trace and trank
+
+```{r}
+b9.2_ggs <- ggmcmc::ggs(b9.2)
+p1 <- ggs_traceplot(b9.2_ggs) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  theme_minimal()
+# p1
+
+p2 <- posterior_samples(b9.2, add_chain = TRUE) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(b_Intercept:sigma)) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir")
+# p2
+
+# we use patchwork
+(
+  (p1 / p2) &
+    theme(legend.position = "none")
+) +
+  plot_annotation(title = "These chains are not healthy",
+                  subtitle = "Model b9.2")
+```
+
+we can also see that the parameter's mean has a very hard time reaching a solution
+with different behaviors between the chains, i.e. the chains behave erratically.
+
+```{r}
+ggs_running(b9.2_ggs) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  theme_minimal() +
+  labs(title = "Running means",
+       subtitle = "Model b9.2", color = "chain")
+```
+
+and the autocorrelations are not as well behave as we normally see
+
+
+```{r}
+ggs_autocorrelation(b9.2_ggs) +
+  scale_fill_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir", guide = FALSE) +
+  theme_minimal() + 
+  labs(title = "Autocorrelations",
+       subtitle = "Model b9.2", color = NULL, fill = "chain")
+```
+
+
+
+#### Convergent transitions
+
+Now lets give it little better priors to solve the issue.  The model is as follows
+
+$$
+\begin{align*}
+y_i &\sim \mathcal{N}(\mu, \sigma) \\
+\mu &= \alpha \\
+\alpha &\sim \mathcal{N}(1, 10) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b09_03.rds")
+b9.3 <- readRDS(file = a_file)
+# b9.3 <-
+#   brm(data = list(y = c(-1, 1)),
+#       family = gaussian,
+#       y ~ 1,
+#       prior = c(prior(normal(1, 10), class = Intercept),
+#                 prior(exponential(1), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 3, seed = 9)
+# saveRDS(b9.3, file = a_file)
+summary(b9.3)
+```
+
+and the results are more convincing
+
+```{r}
+b9.3_ggs <- ggmcmc::ggs(b9.3)
+p1 <- ggs_traceplot(b9.3_ggs) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  theme_minimal()
+# p1
+
+p2 <- posterior_samples(b9.3, add_chain = TRUE) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(b_Intercept:sigma)) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir")
+# p2
+
+# we use patchwork
+(
+  (p1 / p2) &
+    theme(legend.position = "none")
+) +
+  plot_annotation(title = "Better results even with weakly informative priors",
+                  subtitle = "Model b9.3")
+```
+
+and we can see the parameter's mean behaving similarly.
+
+```{r}
+ggs_running(b9.3_ggs) +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  theme_minimal() +
+  labs(title = "Running means",
+       subtitle = "Model b9.3", color = "chain")
+```
+and the autocorrelations have certainly improved
+
+```{r}
+ggs_autocorrelation(b9.3_ggs) +
+  scale_fill_paletteer_d("lisa::Pierre_AugusteRenoir") +
+  scale_color_paletteer_d("lisa::Pierre_AugusteRenoir", guide = FALSE) +
+  theme_minimal() + 
+  labs(title = "Autocorrelations",
+       subtitle = "Model b9.3", color = NULL, fill = "chain")
+```
+
+### Non-identifiable parameters
+
+The data and model is not exactly what McElreath did but it illustrate the same thing.
+See @kurtz2020b for more details.
+
+```{r}
+set.seed(9)
+y <- rnorm(100, mean = 0, sd = 1)
+```
+
+#### Non-identifiable parameters with very wide priors
+
+the model with unreasonable priors
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b09_04.rds")
+b9.4 <- readRDS(file = a_file)
+# b9.4 <-
+#   brm(data = list(y  = y,
+#                   a1 = 1,
+#                   a2 = 1), 
+#       family = gaussian,
+#       y ~ 0 + a1 + a2,
+#       prior = c(prior(normal(0, 1000), class = b),
+#                 prior(exponential(1), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 3, seed = 9)
+# saveRDS(b9.4, file = a_file)
+summary(b9.4)
+```
+
+```{r}
+get_variables(b9.4)
+```
+
+
+
+```{r}
+b9.4_ggs <- ggmcmc::ggs(b9.4)
+p1 <- ggs_traceplot(b9.4_ggs) +
+  scale_color_paletteer_d("lisa::JanvanEyck") +
+  theme_minimal()
+# p1
+
+p2 <- posterior_samples(b9.4, add_chain = TRUE) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(b_a1:sigma)) +
+  scale_color_paletteer_d("lisa::JanvanEyck")
+# p2
+
+# we use patchwork
+(
+  (p1 / p2) &
+    theme(legend.position = "none")
+) +
+  plot_annotation(title = "Non-identifiable parameters with uninformative priors",
+                  subtitle = "Model b9.4")
+```
+where we can see that the autocorrelations are a major cause of problems!
+
+```{r}
+ggs_autocorrelation(b9.4_ggs) +
+  scale_fill_paletteer_d("lisa::JanvanEyck") +
+  scale_color_paletteer_d("lisa::JanvanEyck", guide = FALSE) +
+  theme_minimal() + 
+  labs(title = "Autocorrelations",
+       subtitle = "Model b9.4", color = NULL, fill = "chain")
+```
+
+which causes the means the be all over the place
+
+
+```{r}
+ggs_running(b9.4_ggs) +
+  scale_color_paletteer_d("lisa::JanvanEyck") +
+  theme_minimal() +
+  labs(title = "Running means",
+       subtitle = "Model b9.4", color = "chain")
+```
+
+
+#### Non-identifiable parameters with weakly informative priors
+
+and the model with weakly informative priors
+
+```{r}
+a_file <- here::here(getwd(), "fits", "b09_05.rds")
+b9.5 <- readRDS(file = a_file)
+# b9.5 <-
+#   brm(data = list(y  = y,
+#                   a1 = 1,
+#                   a2 = 1), 
+#       family = gaussian,
+#       y ~ 0 + a1 + a2,
+#       prior = c(prior(normal(0, 10), class = b),
+#                 prior(exponential(1), class = sigma)),
+#       iter = 2000, warmup = 1000, chains = 3, seed = 9)
+# saveRDS(b9.5, file = a_file)
+summary(b9.5)
+```
+
+now the plots make more sense
+
+
+```{r}
+b9.5_ggs <- ggmcmc::ggs(b9.5)
+p1 <- ggs_traceplot(b9.5_ggs) +
+  scale_color_paletteer_d("lisa::JanvanEyck") +
+  theme_minimal()
+# p1
+
+p2 <- posterior_samples(b9.5, add_chain = TRUE) %>%
+  bayesplot::mcmc_rank_overlay(pars = vars(b_a1:sigma)) +
+  scale_color_paletteer_d("lisa::JanvanEyck")
+# p2
+
+# we use patchwork
+(
+  (p1 / p2) &
+    theme(legend.position = "none")
+) +
+  plot_annotation(title = "Non-identifiable parameters withw eakly informative priors",
+                  subtitle = "Model b9.5")
+```
+
+where we can see that the autocorrelations are better now
+
+```{r}
+ggs_autocorrelation(b9.5_ggs) +
+  scale_fill_paletteer_d("lisa::JanvanEyck") +
+  scale_color_paletteer_d("lisa::JanvanEyck", guide = FALSE) +
+  theme_minimal() + 
+  labs(title = "Autocorrelations",
+       subtitle = "Model b9.5", color = NULL, fill = "chain")
+```
+
+and the means are also much improved, actually we might even take
+a smaller sample size.
+
+
+```{r}
+ggs_running(b9.5_ggs) +
+  scale_color_paletteer_d("lisa::JanvanEyck") +
+  theme_minimal() +
+  labs(title = "Running means",
+       subtitle = "Model b9.5", color = "chain")
+```
+
+#### `ggs_running` and `ggs_autocorrelation`
+
+I find much easier to understand the issues by looking at the autocorrelation
+and the mean plots.  They are a very nice complement to the trace and trank
+plots.
 
 
 ## Summary
