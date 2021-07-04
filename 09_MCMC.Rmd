@@ -349,7 +349,19 @@ str(dat_slim)
 
 ### Sampling from the posterior
 
-This is easy with `tidybayes`
+This is easy with `tidybayes`. The model is
+
+
+$$
+\begin{align*}
+log\_gdp\_s_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu &= \alpha_{cid[i]} + \beta_{cid[i]} \cdot rugged\_sc \\
+\alpha_{cid[i]} &\sim \mathcal{N}(1, 0.1) \\
+\beta_{cid[i]} &\sim \mathcal{N}(1, 0.3) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
 
 ```{r}
 a_file <- here::here(getwd(), "fits", "b09_01.rds")
@@ -503,7 +515,6 @@ trank plot.
 b9.1b_post <- posterior_samples(b9.1b, add_chain = TRUE)
 b9.1b_post %>% 
   bayesplot::mcmc_rank_overlay(pars = vars(b_a_cid1:sigma)) +
-  # scale_color_pomological() +
   scale_color_paletteer_d("lisa::LeeKrasner") +
   coord_cartesian(ylim = c(25, NA)) +
   theme(legend.position = c(.95, .20)) +
@@ -540,8 +551,7 @@ ggs_crosscorrelation(b9.1b_ggs) +
 #### Autocorrelations
 
 ```{r}
-b9.1b_ggs %>%
-  ggs_autocorrelation() +
+ggs_autocorrelation(b9.1b_ggs) +
   scale_fill_paletteer_d("lisa::LeeKrasner") +
   scale_color_paletteer_d("lisa::LeeKrasner", guide = FALSE) +
   theme_minimal() + 
@@ -574,7 +584,7 @@ For more information on convergence statistics $\mathcal{\widehat{R}}$ see
 section 9.5.2.1 in @kurtz2020b.
 
 
-## Taming a wild chain
+### Taming a wild chain
 
 The `start` argument in `rethinking` is replaced by `inits` in `brms`.
 The simple example of a wild chain is as follows.  Note that `brms` can take
@@ -689,6 +699,7 @@ y_i &\sim \mathcal{N}(\mu, \sigma) \\
 \sigma &\sim \mathcal{Exp}(1)
 \end{align*}
 $$
+
 
 ```{r}
 a_file <- here::here(getwd(), "fits", "b09_03.rds")
