@@ -9,6 +9,7 @@ library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
 library(ggmcmc, quietly = TRUE)
+library(bayesplot, quietly = TRUE)
 library(patchwork, quietly = TRUE)
 library(paletteer, quietly = TRUE)
 ```
@@ -606,6 +607,8 @@ y_i &\sim \mathcal{N}(\mu, \sigma) \\
 \sigma &\sim \mathcal{Exp}(0.0001)
 \end{align*}
 $$
+
+
 
 ```{r}
 a_file <- here::here(getwd(), "fits", "b09_02.rds")
