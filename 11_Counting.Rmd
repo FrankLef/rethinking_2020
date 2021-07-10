@@ -685,22 +685,325 @@ and the details are
 tibble(culture = d$culture,
        k = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
   arrange(desc(k)) %>% 
-  mutate_if(is.double, round, digits = 2)
+  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
 ```
 **which shows that Hawai is the outlier and is very influential**.
 
+#### Plotting the posterior
 
+```{r}
+b11.10_seq <-
+  distinct(d, cid) %>% 
+  expand(cid, 
+         log_pop_s = seq(from = -4.5, to = 2.5, length.out = 100))
+b11.10_fitted <- 
+  fitted(b11.10,
+         newdata = b11.10_seq,
+         probs = c(.055, .945)) %>%
+  data.frame() %>%
+  bind_cols(b11.10_seq)
+```
+
+
+
+```{r}
+cultures <- c("Hawaii", "Tonga", "Trobriand", "Yap")
+
+p1 <- ggplot(b11.10_fitted, aes(x = log_pop_s, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, size = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  ggrepel::geom_text_repel(data =
+                    bind_cols(d, b11.10$criteria$loo$diagnostics) %>%
+                    filter(culture %in% cultures) %>%
+                    mutate(label = paste(culture, "(", round(pareto_k, digits = 2), ")")),
+                  aes(y = total_tools, label = label),
+                  size = 3, seed = 11, color = "black", family = "Times") +
+  coord_cartesian(xlim = range(b11.10$data$log_pop_s),
+                  ylim = c(0, 80)) +
+  ggthemes::theme_clean() +
+  theme(legend.position = "none") +
+  labs(x = "log population (std)",
+       y = "total tools")
+# p1
+```
+
+```{r}
+p2 <-
+  b11.10_fitted %>%
+  mutate(population = exp((log_pop_s * sd(log(d$population))) + mean(log(d$population)))) %>% 
+
+  ggplot(aes(x = population, group = cid, color = cid)) +
+  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
+              stat = "identity",
+              alpha = 1/4, size = 1/2) +
+  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
+             aes(y = total_tools, size = pareto_k),
+             alpha = 4/5) +
+  scale_x_continuous("population", breaks = c(0, 50000, 150000, 250000)) +
+  coord_cartesian(xlim = range(d$population),
+                  ylim = c(0, 80)) +
+  ggthemes::theme_clean() +
+  theme(legend.position = "none") +
+  labs(y = "total tools")
+# p2
+```
+
+
+and the 2 plots together
+
+```{r}
+p1 + p2 +
+  plot_annotation(title = "Posterior predictions for Oceanic Tools model",
+                  subtitle = "Model b11.10 - Size of points is the paretor_k factor")
+```
+
+#### Overthinking: Modeling tool innovation
+
+Using the scientific approach with and ODE (ordinary differential equation)
+
+$$
+\Delta T = \alpha P^\beta - \gamma T
+$$
+
+which as an equilibrium point at $\Delta T = 0$ and therefore
+
+$$
+\hat{T} = \frac{\alpha P^\beta}{\gamma}
+$$
+with the theorical model **which has no link function**
+
+$$
+\begin{align*}
+T_i &\sim \mathcal{Poisson}(\lambda_i) \\
+\lambda_i &\sim \frac{\alpha P^\beta}{\gamma}
+\end{align*}
+$$
+
+in practice, the model is modified to exponentiate $\alpha$ to ensure it is
+always positive
+
+$$
+\begin{align*}
+total\_tools_i &\sim \mathcal{Poisson}(\lambda_i) \\
+\lambda_i &\sim \exp(\alpha_{cid[i]}) \frac{population_i^{\beta_{cid[i]}}}{\gamma} \\
+\alpha_j &\sim \mathcal{N}(1, 1) \\
+\beta_j &\sim \mathcal{Exp}(1) \\
+\gamma &\sim \mathcal{Exp}(1) \\
+\end{align*}
+$$
+
+and the fit
+
+```{r}
+a_file <- here::here("fits", "b11_11.rds")
+b11.11 <- readRDS(a_file)
+# b11.11 <- brm(data = d, 
+#       family = poisson(link = "identity"),
+#       bf(total_tools ~ exp(a) * population^b / g,
+#          a + b ~ 0 + cid,
+#          g ~ 1,
+#          nl = TRUE),
+#       prior = c(prior(normal(1, 1), nlpar = a),
+#                 prior(exponential(1), nlpar = b, lb = 0),
+#                 prior(exponential(1), nlpar = g, lb = 0)),
+#       cores = detectCores(), seed = 11,
+#       control = list(adapt_delta = .95))
+# b11.11 <- brms::add_criterion(b11.11, criterion = c("waic", "loo"))
+# saveRDS(b11.11, file = a_file)
+summary(b11.11)
+```
+
+
+#### final model comparison
+
+```{r}
+loo::loo_compare(b11.9, b11.10, b11.11, criterion = "loo") %>%
+  print(simplify = FALSE)
+```
+So the model b11.11 is slightly better.  Note however that its difference form
+model b11.10 is with the standard deviation.
+
+and the model weights.
+
+
+```{r}
+model_weights(b11.9, b11.10, b11.11) %>% 
+  round(digits = 2)
+```
 
 ### Negative binomial (gamma-Poisson) models
 
+This distribution is covered in chapter 12.
+
+> A very comon extension of Poisson GLM is to swap the Poisson distribution
+for something called the **Negative Binomial** distribution, also called
+**Poisson-Gamma**.  It s a Poisson in disguise because it is a mixture of
+differrent Poisson distribution.
 
 
 ### Example: Exposure and the offset
+
+When we have different unit of times, or distance (or other denominator), 
+$\tau_i$ for expected number of events $\mu_i$ then 
+
+$$
+\lambda = \frac{\mu}{\tau}
+$$
+and now the link is
+
+$$
+\begin{align*}
+\log{\lambda_i} &= \log{\frac{\mu_i}{\tau_i}}=\alpha + \beta x_i \\
+\log{\lambda_i} &= \log{\mu_i} - log{\tau_i}=\alpha + \beta x_i \\
+&\therefore \\
+\log{\mu_i} &= log{\tau_i} + \alpha + \beta x_i
+\end{align*}
+$$
+
+When $\tau_i = 1$ then $\log{\tau_i} = 0$ and we recover the original GLM
+link.
+
+#### Example: Monastery with varying $\tau_i$
+
+```{r}
+ndays <- 30  # nb of days
+ydays <- rpois(ndays, lambda = 1.5)  # nb of manuscripts per day
+nweeks <- 4
+yweeks <- rpois(nweeks, 0.5*7)  # nb of manuscripts per week
+# create the dataframe with all data
+d <- data.frame(
+  nb = c(ydays, yweeks),
+  days = c(rep(1, ndays), rep(7, nweeks)),
+  monastery = c(rep(0, ndays), rep(1, nweeks))) %>%
+  mutate(days_lg = log(days))
+```
+
+
+the model is
+
+$$
+\begin{align*}
+nb_i &\sim \mathcal{Poisson}(\mu_i) \\ 
+\log{\mu_i} &= log(days_i) + \alpha + \beta \cdot monastery_i \\
+\alpha &\sim \mathcal{N}(0, 1) \\
+\beta &\sim \mathcal{N}(0, 1) \\
+\end{align*}
+$$
+
+and the fit. With `brms` you use the `offset()` funciton.
+
+```{r}
+a_file <- here::here("fits", "b11_12.rds")
+b11.12 <- readRDS(a_file)
+# b11.12 <- brm(data = d, 
+#       family = poisson,
+#       nb ~ 1 + offset(days_lg) + monastery,
+#       prior = c(prior(normal(0, 1), class = Intercept),
+#                 prior(normal(0, 1), class = b)),
+#       cores = detectCores(), seed = 11)
+# b11.12 <- brms::add_criterion(b11.12, criterion = c("waic", "loo"))
+# saveRDS(b11.12, file = a_file)
+summary(b11.12)
+```
+
+and to get the rates on the natural scale we use
+
+$$
+\begin{align*}
+\lambda_{monastery[0]} &= \exp{(\alpha)} \\
+\lambda_{monastery[1]} &= \exp{(\alpha + \beta)}
+\end{align*}
+$$
+with the posterior values
+
+```{r}
+glimpse(posterior_samples(b11.12))
+```
+
+
+
+```{r}
+posterior_samples(b11.12) %>%
+  mutate(lambda_old = exp(b_Intercept),
+         lambda_new = exp(b_Intercept + b_monastery)) %>%
+  pivot_longer(starts_with("lambda"), names_to = "monastery") %>% 
+  mutate(monastery = factor(monastery, levels = c("lambda_old", "lambda_new"))) %>%
+  group_by(monastery) %>%
+  mean_hdi(value, .width = .89) %>% 
+  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+```
 
 
 
 ## Multinomial and categorical models
 
+
+$$
+\begin{align*}
+Pr(y_1, \ldots, y_K \mid n, p_1, \ldots, p_K) &= 
+\frac{n!}{\prod_i y_i !} \prod_{i=1}^{K} p_i^{y_i} \\
+&=\binom{n}{y_1, \ldots, y_K} \prod_{i=1}^{K} p_i^{y_i}
+\end{align*}
+$$
+
+and the multinomial logit, called **softmax** is
+
+$$
+Pr(k \mid s_1, s_2 \ldots, s_K) = \frac{\exp{(s_k)}}{\sum_{i=1}^{K}\exp{(s_i)}}
+$$
+
+There is no base `R` implementation of `softmax`
+
+### Predictors matched to outcomes
+
+
+```{r}
+library(rethinking)
+
+# simulate career choices among 500 individuals
+n <- 500           # number of individuals
+income <- c("1" = 1, "2" = 2, "3" = 5)    # expected income of each career
+score  <- 0.5 * income  # scores for each career, based on income
+
+
+# next line converts scores to probabilities
+prob <- softmax("1" = score[1], "2" = score[2], "3" = score[3])
+
+set.seed(34302)
+# sample chosen career for each individual
+career <- sapply(seq_len(n), function(i) sample(1:3, size = 1, prob = prob))
+# which gives the following frequencies for career = 1, 2, 3
+tabulate(career)
+# which is very close to the theoretical softmax from above
+round(tabulate(career) / n, 3)
+round(prob, 3)
+```
+
+and the dataframe is
+
+```{r}
+d <- data.frame(
+  career = career,
+  income = income[as.character(career)])
+d %>%
+  count(career) %>%
+  mutate(pct = 100 * n / sum(n),
+         prob = n / sum(n))
+# which is very close to the theoretical softmax from above
+prob
+```
+
+
+
+### Predictors matched to observations
+
+
+
+### Multinomial in disguise as Poisson
 
 
 
