@@ -543,6 +543,3 @@ b11.6 <- readRDS(file = a_file)  # load the file
 
 
 ## Summary
-
-
-## Practice

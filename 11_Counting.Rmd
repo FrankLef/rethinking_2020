@@ -941,6 +941,10 @@ posterior_samples(b11.12) %>%
 
 ## Multinomial and categorical models
 
+**Important**: It is important to read @kurtz2020b in this section because
+* McElreath seems to have obtained the wrong results
+* Kurtz gives a significantly more details and explanations
+
 
 $$
 \begin{align*}
@@ -956,22 +960,20 @@ $$
 Pr(k \mid s_1, s_2 \ldots, s_K) = \frac{\exp{(s_k)}}{\sum_{i=1}^{K}\exp{(s_i)}}
 $$
 
-There is no base `R` implementation of `softmax`
+
 
 ### Predictors matched to outcomes
 
 
 ```{r}
-library(rethinking)
-
 # simulate career choices among 500 individuals
-n <- 500           # number of individuals
-income <- c("1" = 1, "2" = 2, "3" = 5)    # expected income of each career
+n <- 500  # number of individuals
+income <- c("1" = 1, "2" = 2, "3" = 5)  # expected income of each career
 score  <- 0.5 * income  # scores for each career, based on income
 
 
 # next line converts scores to probabilities
-prob <- softmax("1" = score[1], "2" = score[2], "3" = score[3])
+prob <- rethinking::softmax("1" = score[1], "2" = score[2], "3" = score[3])
 
 set.seed(34302)
 # sample chosen career for each individual
@@ -994,9 +996,301 @@ d %>%
   mutate(pct = 100 * n / sum(n),
          prob = n / sum(n))
 # which is very close to the theoretical softmax from above
-prob
+round(prob, 3)
 ```
 
+
+
+#### Scores
+
+* Scores can be thought of as **weights**.
+
+* Their exact values are not much important as their difference from one another.
+
+For example if you add a constant to the scores from above, you get the same
+softmax
+
+```{r}
+score_new <- score + 11  # 11 is an arbitrary constant added to the scores
+# compute the new softmax
+exp(score_new) / sum(exp(score_new))
+# which gives the same result and shows that the difference between
+# the scores is what matters
+rethinking::softmax(score)
+```
+
+#### Model of predictors matched to outcomes
+
+
+$$
+\begin{align*}
+\overrightarrow{career} &\sim \mathcal{multinomial(career_1, career_2, career_3)} =  \binom{n}{career_1, career_2, career_3} \prod_{i=1}^{3} p_i^{career_i}\\
+p_1 &= \frac{\exp{(score_1)}}{\sum_1^3\exp{(score_i)}} \\
+p_2 &= \frac{\exp{(score_2)}}{\sum_1^3\exp{(score_i)}} \\
+p_3 &= \frac{\exp{(score_3)}}{\sum_1^3\exp{(score_i)}} \\
+score_1 &= \alpha_1 + \beta \cdot income_1 \\
+score_2 &= \alpha_2 + \beta \cdot income_2 \\
+score_3 &= \alpha_3 + \beta \cdot income_3 \\
+\alpha_1 &\sim \mathcal{N}(0, 1) \\
+\alpha_2 &\sim \mathcal{N}(0, 1) \\
+\alpha_3 &\sim \mathcal{N}(0, 1) \\
+\beta &\sim \mathcal{N}(0, 0.5) \\
+\end{align*}
+$$
+
+#### Fit with `stan`
+
+We fit with `stan` using the same code as mcElreath to demonstrate his results
+are different
+
+
+```{r}
+# define the model
+code_m11.13 <- "
+data{
+  int N; // number of individuals
+  int K; // number of possible careers 
+  int career[N]; // outcome
+  vector[K] career_income;
+}
+parameters{
+  vector[K - 1] a; // intercepts
+  real<lower=0> b; // association of income with choice
+}
+model{
+  vector[K] p;
+  vector[K] s;
+  a ~ normal(0, 1);
+  b ~ normal(0, 0.5);
+  s[1] = a[1] + b * career_income[1]; 
+  s[2] = a[2] + b * career_income[2]; 
+  s[3] = 0; // pivot
+  p = softmax(s);
+  career ~ categorical(p);
+}
+"
+
+# wrangle the data
+dat_list <- 
+  list(N = n, 
+       K = 3, 
+       career = career, 
+       career_income = income)
+
+# fit the model (and save it)
+a_file <- here::here("fits", "m11_13.rds")
+m11.13 <- readRDS(a_file)
+# m11.13 <-
+#   rstan::stan(data = dat_list,
+#        model_code = code_m11.13,
+#        chains = 4)
+# saveRDS(m11.13, file = a_file)
+```
+
+
+and check the summary using `rethinking::precis`
+
+Note: although Kurtz results seem to work, they have a high Rhat, just like McElreath
+and warnings about divergent points after warmup are issued.  The effective sizes
+for Kurtz is much lower than the ones from McElreath
+
+```{r}
+# the results are different than McElreath
+rethinking::precis(m11.13, depth = 2) %>%
+  round(digits = 2)
+```
+The results are different than McEalreath!
+
+
+#### Null Model (Intercept-only)
+
+Now modelize step by step to understand what we are doing. As usual we start
+we the model with only the intercept.  In the case of multinomial, since every
+category is a model in itself, we use an intercept per category.
+
+The 3rd category is the *pivot* and identified as such in the `brm()` function below.
+The default of `brm()` is to take the first category as the pivot.
+
+```{r}
+a_file <- here::here("fits", "b11_13null.rds")
+b11.13null <- readRDS(a_file)
+# b11.13null <-
+#   brm(data = d, 
+#       family = categorical(link = logit, refcat = 3),
+#       career ~ 1,
+#       prior = c(prior(normal(0, 1), class = Intercept, dpar = mu1),
+#                 prior(normal(0, 1), class = Intercept, dpar = mu2)),
+#       cores = detectCores(), seed = 11)
+# b11.13null <- add_criterion(b11.13null, criterion = c("waic", "loo"))
+# saveRDS(b11.13null, file = a_file)
+summary(b11.13null)
+```
+
+It is important to understand the role of the **pivot category**.  it is simple,
+the pivot category is used to center the categorical scores.
+
+For example the scores we used so far, when centered with the this category,
+are as follows
+
+```{r}
+tibble::tibble(
+  incomes = income,
+  scores = score,
+  rescaled_scores = scores - score["3"]
+)
+```
+
+which is the intercepts we obtain with the null model.  This is an easy check
+on the null model.
+
+Now lets see what the fitted values for the $\mu_{cat}$ are. These fitted values
+correspond to the **softmax** which is the link function.  Note that,
+since each category is separate from the other, `fitted` will return a 3-dimension
+array where the 3rd dimension is the category no.
+
+We have 500 rows, just like the original data.  Here we show the result of the first row
+
+```{r}
+# No newdata used, so the original data is used by fitted
+fitted(b11.13null)[1, , ] %>%
+  round(digits = 2) %>%
+  t()
+```
+and we can see that that the multinomial probability is actually very close
+to the theoretical softmax
+
+
+```{r}
+tibble::tibble(
+  income = income,
+  score = score,
+  prob = exp(score) / sum(exp(score))
+  ) %>%
+  round(digits = 2)
+```
+
+and using the posterior samples to compute the multinomial probabilities
+we do the following
+
+```{r}
+posterior_samples(b11.13null) %>% 
+  mutate(b_mu3_Intercept = 0) %>% 
+  mutate(p1 = exp(b_mu1_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
+         p2 = exp(b_mu2_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
+         p3 = exp(b_mu3_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept))) %>% 
+  pivot_longer(p1:p3) %>% 
+  group_by(name) %>% 
+  mean_qi(value) %>% 
+  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+```
+
+which match with the theoretical **softmax**.
+
+> This is an important test to make sure we get our model right before going any
+further.
+
+#### Full model
+
+> *With `brms` non-linear syntax we can fit the model with one $\beta$
+parameter or allow it to vary.  The `lb` argument is used to set the lower bound.
+
+We will create 4 models with varying specs as follows
+
+```{r}
+crossing(b  = factor(c("b1 & b2", "b"), levels = c("b1 & b2", "b")),
+         lb = factor(c("NA", 0), levels = c("NA", 0))) %>% 
+  mutate(fit = paste0("b11.13", letters[1:n()])) %>% 
+  relocate(fit)
+```
+
+and so the model fits are
+
+```{r}
+a_file <- here::here("fits", "b11_13a.rds")
+# b11.13a <- readRDS(a_file)
+b11.13a <- brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * 1),
+         nlf(mu2 ~ a2 + b2 * 2),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b1),
+                prior(normal(0, 0.5), class = b, nlpar = b2)),
+      cores = detectCores(), seed = 11)
+b11.13a <- add_criterion(b11.13a, criterion = c("waic", "loo"))
+saveRDS(b11.13a, file = a_file)
+
+a_file <- here::here("fits", "b11_13b.rds")
+# b11.13b <- readRDS(a_file)
+b11.13b <- brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * 1),
+         nlf(mu2 ~ a2 + b2 * 2),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b1, lb = 0),
+                prior(normal(0, 0.5), class = b, nlpar = b2, lb = 0)),
+      cores = detectCores(), seed = 11,
+      control = list(adapt_delta = .99))
+b11.13b <- add_criterion(b11.13b, criterion = c("waic", "loo"))
+saveRDS(b11.13b, file = a_file)
+
+a_file <- here::here("fits", "b11_13c.rds")
+# b11.13c <- readRDS(a_file)
+b11.13c <-
+  brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b * 1),
+         nlf(mu2 ~ a2 + b * 2),
+         a1 + a2 + b ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b)),
+      cores = detectCores(), seed = 11)
+b11.13c <- add_criterion(b11.13c, criterion = c("waic", "loo"))
+saveRDS(b11.13c, file = a_file)
+
+a_file <- here::here("fits", "b11_13d.rds")
+# b11.13d <- readRDS(a_file)
+b11.13d <-
+  brm(data = d, 
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b * 1),
+         nlf(mu2 ~ a2 + b * 2),
+         a1 + a2 + b ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b, lb = 0)),
+      cores = detectCores(), seed = 11,
+      control = list(adapt_delta = .99))
+b11.13d <- add_criterion(b11.13d, criterion = c("waic", "loo"))
+saveRDS(b11.13d, file = a_file)
+```
+
+and comparing the performance of the models
+
+
+```{r}
+loo_compare(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %>%
+  print(simplify = FALSE)
+```
+
+The results are different than Kurtz, this is caused by the facts that the models
+have very similar performance and therefore it doesn't take much to change the ranking.
+Most numbers, e.g. looic are similar.
+
+and the model weights
+
+```{r}
+model_weights(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>%
+  round(digits = 2)
+```
 
 
 ### Predictors matched to observations
