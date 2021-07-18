@@ -1,15 +1,454 @@
 ```{r include=FALSE}
+library(dplyr, quietly = TRUE)
+library(tidyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
-library(tidyr)
-library(dplyr)
-library(ggplot2)
-library(paletteer)
-library(bayesplot)
+library(loo)
+library(dagitty, quietly = TRUE)
+library(ggdag, quietly = TRUE)
+library(ggdist, quietly = TRUE)
+library(ggmcmc, quietly = TRUE)
+library(bayesplot, quietly = TRUE)
+library(patchwork, quietly = TRUE)
+library(paletteer, quietly = TRUE)
 ```
 
 
 # Monsters and Mixtures {#Mixed}
+
+
+## Over-dispersed outcomes
+
+### Beta-binomial
+
+#### Beta-binomial distribution
+
+The beta distribution is
+
+$$
+\mathcal{Beta}(x|\alpha, \beta) =
+\frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} x^{\alpha -1} (1-x)^{\beta -1} =
+\frac{1}{B(\alpha, \beta)} x^{\alpha -1} (1-x)^{\beta -1}, 0 \leq x \leq 1
+$$
+which is not the format used by McElrath.  He uses the following
+shape parameters wich are much easier to understand as $\mu$ is the **average**
+of the distribution and $\kappa$ is the **spread**.
+
+$$
+\mu = \bar{p} = \frac{\alpha}{\alpha + \beta} \\
+\kappa = \theta = \alpha + \beta
+$$
+
+and the standard deviation of the beta binomial distribution is
+
+$$
+\sigma = \sqrt{\frac{\mu(1-\mu)}{\kappa+1}}
+$$
+
+
+The function to convert from the mean and kappa to the mathematical $\alpha$
+and $\beta$, as provided by Krushke, is
+
+```{r}
+betaABfromMeanKappa <- function(mean, kappa) {
+  stopifnot(mean > 0 & mean < 1)
+  stopifnot(kappa > 0)
+  a <- mean * kappa
+  b <- (1 - mean) * kappa
+  list(a = a, b = b)
+}
+```
+
+
+The beta-binomial distribution is not defined in `brms`.  We need to define the 
+family in ``brms` as well as a `stan_funs()` and `stanvar()`.
+
+```{r}
+# IMPORTANT: we could have used lb = c(NA, 0) as Brukner does
+# see note just below on lb = c(NA, 2)
+beta_binomial2 <- custom_family(
+  "beta_binomial2", dpars = c("mu", "phi"),
+  links = c("logit", "log"), lb = c(NA, 2),
+  type = "int", vars = "vint1[n]"
+)
+
+stan_funs <- "
+  real beta_binomial2_lpmf(int y, real mu, real phi, int T) {
+    return beta_binomial_lpmf(y | T, mu * phi, (1 - mu) * phi);
+  }
+  int beta_binomial2_rng(real mu, real phi, int T) {
+    return beta_binomial_rng(T, mu * phi, (1 - mu) * phi);
+  }
+"
+
+stanvars <- stanvar(scode = stan_funs, block = "functions")
+```
+
+
+> Did you notice `lb = c(NA, 2`^ In Burkner's vignette the lower bound of $\phi$ 
+is 0.  Since McElreath wanted the lower bound to 2, we will use lb = 2.
+
+See also McEleath explanation of 2 in section 12.1.1 just before R code 12.1
+on p. 371.
+
+
+Variations of rhe beta-binomial distribution using different parameter values
+can be illustrated as follows
+
+
+```{r}
+bpdf <- crossing(pbar = c(0.25, 0.5, 0.75), theta = c(5, 15, 30)) %>% 
+  expand(nesting(pbar, theta), 
+         x = seq(from = 0, to = 1, length.out = 100)) %>%
+  mutate(density = rethinking::dbeta2(x, pbar, theta),
+         mu = paste("mu", pbar, sep = "=="),
+         kappa = paste("kappa", theta, sep = "=="))
+bpdf
+```
+
+and the plot
+
+```{r}
+p <- ggplot(data = bpdf) +
+  geom_ribbon(aes(x = x, ymin = 0, ymax = density),
+              fill = "darkorchid1") + 
+  scale_y_continuous(NULL, labels = NULL) +
+  ggthemes::theme_hc() +
+  theme(axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey92")) +
+  labs(title = "Beta can take many shapes",
+       x = "parameter space") +
+  facet_grid(kappa~mu, labeller = label_parsed)
+p
+```
+
+
+
+#### Beta-binomial model
+
+
+
+The data used is
+
+```{r}
+data(UCBadmit)
+d <- UCBadmit %>%
+  mutate(gid = ifelse(applicant.gender == "male", "1", "2"))
+rm(UCBadmit)
+```
+
+
+
+There is an error in the model defined by McElrath, to concur with his code
+at 11.26, the model is
+
+$$
+\begin{align*}
+admit_i &\sim \mathcal{BetaBinomial}(N_i, \bar{p}_i, \phi) \\
+logit(\bar{p}_i) &= \alpha_{gid[i]} \\
+\alpha &\sim \mathcal{N}(0, 1.5) \\
+\phi &\sim \mathcal{Exponential}(1)
+\end{align*}
+$$
+
+
+which we fit as follows
+
+```{r}
+a_file <- here::here("fits", "b12_01.rds")
+b12.1 <- readRDS(file = a_file)
+# b12.1 <- brm(
+#   data = d,
+#   family = beta_binomial2,
+#   admit | vint(applications) ~ 0 + gid,
+#   prior = c(prior(normal(0, 1.5), class = b),
+#             prior(exponential(1), class = phi)),
+#   cores = detectCores(),
+#   stanvars = stanvars,
+#   seed = 12)
+# NOT USED b12.1 <- add_criterion(b12.1, criterion = c("waic", "loo"))
+saveRDS(object = b12.1, file = a_file)
+```
+
+with the summary
+
+```{r}
+summary(b12.1)
+```
+
+
+and the posterior data which *represents the distribution rather than the data*
+
+```{r}
+b12.1_post <- posterior_samples(b12.1)
+glimpse(b12.1_post)
+```
+
+
+and the interval of the difference between the coefficients is
+
+```{r}
+b12.1_post %>%
+  transmute(b_diff = b_gid1 - b_gid2) %>%
+  mean_qi(.width = 0.89) %>%
+  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+```
+
+and so, just like McElreath, hthe difference between the admission rates
+is close to zero.
+
+
+#### Beta-binomial plots
+
+See @kurtz2020b for the details
+
+```{r}
+set.seed(12)
+
+b12.1_lines <-
+  b12.1_post %>% 
+  mutate(iter  = 1:n(),
+         p_bar = inv_logit_scaled(b_gid2)) %>% 
+  slice_sample(n = 100) %>% 
+  expand(nesting(iter, p_bar, phi),
+         x = seq(from = 0, to = 1, by = .005)) %>% 
+  mutate(density = purrr::pmap_dbl(list(x, p_bar, phi), rethinking::dbeta2))
+
+glimpse(b12.1_lines)
+```
+
+```{r}
+ggplot(b12.1_lines, aes(x = x, y = density)) + 
+  stat_function(fun = rethinking::dbeta2,
+                args = list(prob = mean(inv_logit_scaled(b12.1_post[, "b_gid2"])),
+                            theta = mean(b12.1_post[, "phi"])),
+                size = 1.5, color = "lightblue") +
+  geom_line(aes(group = iter),
+            alpha = .2, color = "darkgreen") +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.5), limits = c(0, 3)) +
+  ggthemes::theme_few() +
+  theme(panel.background = element_rect(fill = "wheat")) +
+  labs(subtitle = "distribution of female admission rates",
+       x = "probability admit", y = "density")
+```
+
+
+
+### Negative-binomial or gamma-Poisson
+
+**You absolutely need to look at the Poisson-lognormal mixture in
+Kurtz's blog [Kurtz blog](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/). 
+See the added section below.**
+
+#### Gamma-Poisson distribution shape
+
+In terms of the shape $\alpha$ and rate $\beta$ the gamma distribution is
+
+$$
+\mathcal{Gamma}(y \mid\alpha, \beta) = \frac{\beta^\alpha y^{\alpha-1} e^{-\beta y}}{\Gamma(\alpha)}
+$$
+
+but the rate $\beta$ and scale $\theta$ are the reciprocal of each other.
+Therefore the gamma distribution can be expressed in terms of shape $\alpha$
+and scale $\theta$ as
+
+
+$$
+\mathcal{Gamma}(y \mid\alpha, \theta) = \frac{y^{\alpha-1} e^{-\frac{y}{\theta}}}{\theta^\alpha\Gamma(\alpha)}
+$$
+
+and, also, the gamma distribution can be expressed in terms of mean $\mu$ and
+shape $\alpha$
+
+
+
+$$
+\mathcal{Gamma}(y \mid \mu, \alpha) = 
+\frac{(\frac{\alpha}{\mu})^\alpha}{\Gamma(\alpha)}
+y^{\alpha-1} \exp{(-\frac{\alpha y}{\mu})}
+$$
+
+
+First we illustrate the gamma-poisson with different combinations of shape $\alpha$ and
+scale $\theta$
+
+Importnat note:  The `dgamma2()` was in the first edition of rethinking
+but not the second edition.  It is shown here only for reference.
+
+```{r}
+gpdf <- crossing(mu    = c(1, 5, 9), theta = c(1, 5, 9)) %>% 
+  expand(nesting(mu, theta), 
+         x = seq(from = 0, to = 27, length.out = 100)) %>%
+  mutate(density    = rethinking::dgamma2(x, mu, theta),
+         mu_char    = paste("mu", mu, sep = "=="),
+         theta_char = paste("theta", theta, sep = "=="))
+# gpdf
+```
+
+and the plot
+
+```{r}
+p <- ggplot(data = gpdf) +
+  geom_ribbon(aes(x = x, ymin = 0, ymax = density),
+              fill = "maroon1") +
+  geom_vline(aes(xintercept = mu),
+             color = "maroon", linetype = 3) +
+  scale_y_continuous(NULL, labels = NULL) +
+  labs(title = "Gamma can take many shapes",
+       subtitle = "(dotted vertical lines mark off the means)",
+       x = "parameter space") +
+  coord_cartesian(xlim = c(0, 25)) +
+  ggthemes::theme_hc() +
+  theme(axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey92")) +
+  facet_grid(theta_char~mu_char, labeller = label_parsed)
+p
+```
+
+
+
+
+#### Data
+
+
+```{r}
+data(Kline)
+d <- Kline %>%
+  mutate(population_ls = scale(log(population)),
+         contact_id = ifelse(contact == "high", 2L, 1L),
+         cid = contact)
+# d
+```
+
+#### Null model
+
+
+Lets do it the right way.  Start with the null model, or as Kurtz call it,
+the intercept-only model
+
+$$
+\begin{align*}
+total\_tools_i &\sim \mathcal{GammaPoisson}(\mu, \alpha) \\
+log(\mu) &= \beta_0 \\
+\beta_0 &\sim \mathcal{Normal}(3, 0.5) \\
+\alpha &\sim \mathcal{Gamma}(0.01,0.01)
+\end{align*}
+$$
+
+and the fit
+
+```{r}
+a_file <- here::here("fits", "b12_02null.rds")
+b12.2null <- readRDS(file = a_file)
+# b12.2null <- brm(data = d, 
+#       family = negbinomial,
+#       total_tools ~ 1,
+#       prior = c(prior(normal(3, 0.5), class = Intercept),  # beta_0
+#                 prior(gamma(0.01, 0.01), class = shape)),  # alpha
+#       cores = detectCores(),
+#       seed = 12)
+# b12.2null <- add_criterion(b12.2null, criterion = c("waic", "loo"))
+# saveRDS(object = b12.2null, file = a_file)
+```
+
+
+with the summary
+
+```{r}
+summary(b12.2null)
+```
+
+#### Full model
+
+
+
+$$
+\begin{align*}
+total\_tools_i &\sim \mathcal{GammaPoisson}(\mu_i, \alpha) \\
+log(\mu) &= \frac{\exp{(\beta_{0,cid[i]})} \cdot population_i^{\beta_{1,cid[i]}}}{\gamma} \\
+\beta_{0,j} &\sim \mathcal{Normal}(1, 1) \\
+\beta_{1,j} &\sim \mathcal{Exponential}(1) \\
+\gamma &\sim \mathcal{Exponential}(1) \\
+\alpha &\sim \mathcal{Exponential}(1)
+\end{align*}
+$$
+
+
+
+```{r}
+a_file <- here::here("fits", "b12_02.rds")
+b12.2 <- readRDS(file = a_file)
+b12.2 <- brm(data = d, 
+      family = negbinomial(link = "identity"),
+      bf(total_tools ~ exp(b0) * population^b1 / g,
+         b0 + b1 ~ 0 + cid,
+         g ~ 1,
+         nl = TRUE),
+      prior = c(prior(normal(1, 1), nlpar = b0),
+                prior(exponential(1), nlpar = b1, lb = 0),
+                prior(exponential(1), nlpar = g, lb = 0),
+                prior(exponential(1), class = shape)),
+      cores = detectCores(),
+      seed = 12,
+      control = list(adapt_delta = .95))
+# b12.2 <- add_criterion(b12.2, criterion = c("waic", "loo"))
+# saveRDS(object = b12.2, file = a_file)
+```
+
+and the summary
+
+```{r}
+summary(b12.2)
+```
+
+
+
+
+The model is
+
+$$
+A_i \sim \mathcal{NegBinomial}(\lambda_i, \theta) \\
+logit(\lambda_i) = \alpha \\
+\alpha \sim \mathcal{N}(0, 10) \\
+\theta \sim \mathcal{Gamma}(0.01, 0.01)
+$$
+using tthe data
+
+
+```{r}
+data(UCBadmit)
+d <- UCBadmit
+```
+
+
+the fit is
+
+
+```{r}
+a_file <- here::here("fits", "b11_06.rds")  # rds file location
+b12.6 <- readRDS(file = a_file)  # load the file
+# b12.6 <-
+#   brm(data = d,
+#       family = negbinomial,
+#       admit ~ 1,
+#       prior = c(prior(normal(0, 10), class = Intercept),
+#                 prior(gamma(0.01, 0.01), class = shape)),  # this is the brms default
+#       iter = 4000, warmup = 1000, cores = 2, chains = 2,
+#       seed = 11)
+# saveRDS(object = b12.6, file = a_file)
+```
+
+
+### Poisson-lognormal
+
+This is an extra section.  The result is so nice it is worth adding here. See
+[Kurtz blog](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/).
+
+
+## Zero-inflated outcomes
+
+
 
 
 ## Ordered categorical outcomes
@@ -116,8 +555,8 @@ inits <- list(
 inits_list <- list(inits, inits)
 a_file <- here::here("fits", "b11_01.rds")  # rds file location
 stopifnot(file.exists(a_file))
-b11.1 <- readRDS(file = a_file)  # load the file
-# b11.1 <- brm(
+b12.1 <- readRDS(file = a_file)  # load the file
+# b12.1 <- brm(
 #   data = d,
 #   family = cumulative,
 #   response ~ 1,
@@ -127,26 +566,26 @@ b11.1 <- readRDS(file = a_file)  # load the file
 #   # the start values
 #   inits = inits_list,
 #   seed = 11)
-# b11.1 <- add_criterion(b11.1, c("loo", "waic"))
-# saveRDS(object = b11.1, file = a_file)
+# b12.1 <- add_criterion(b12.1, c("loo", "waic"))
+# saveRDS(object = b12.1, file = a_file)
 ```
 
 
 which gives the summary
 
 ```{r}
-print(b11.1)
+print(b12.1)
 ```
 
 and we convert the intercepts to the normal scale
 
 ```{r}
-b11.1 %>%
+b12.1 %>%
   fixef() %>%
   brms::inv_logit_scaled()
 # which we can also do with stats:plogis()
 # see appendix A
-# b11.1 %>%
+# b12.1 %>%
 #   fixef() %>%
 #   stats::plogis()
 ```
@@ -157,7 +596,7 @@ They must be computed using a posterior sample.
 
 
 ```{r}
-posterior_samples(b11.1) %>%
+posterior_samples(b12.1) %>%
   select(starts_with("b_")) %>%
   mutate(across(.cols = everything(), .fns = brms::inv_logit_scaled)) %>%
   pivot_longer(cols = everything(), names_to = "key") %>%
@@ -196,15 +635,15 @@ dordlogit.new <- function(x, phi = 0L, log = FALSE) {
 which gives about the same result as R code 11.9 in McElrath.s
 
 ```{r}
-(dordlogit.new(fixef(b11.1)[, 1]))
+(dordlogit.new(fixef(b12.1)[, 1]))
 ```
 
 ```{r}
-fixef(b11.1)[, 1]
-stats::plogis(q = fixef(b11.1)[, 1], lower.tail = TRUE)
-stats::plogis(q = fixef(b11.1)[, 1], lower.tail = FALSE)
-stats::plogis(q = fixef(b11.1)[, 1])
-stats::dlogis(x = fixef(b11.1)[, 1])
+fixef(b12.1)[, 1]
+stats::plogis(q = fixef(b12.1)[, 1], lower.tail = TRUE)
+stats::plogis(q = fixef(b12.1)[, 1], lower.tail = FALSE)
+stats::plogis(q = fixef(b12.1)[, 1])
+stats::dlogis(x = fixef(b12.1)[, 1])
 ```
 
 #### Subsracting from the log-cumulative odds
@@ -212,26 +651,26 @@ stats::dlogis(x = fixef(b11.1)[, 1])
 If we substract from the *log-cumulative odds* then we shift the probability
 mass to higher outcome values.
 
-For example with model b11.1
+For example with model b12.1
 
 ```{r}
-(dordlogit.new(fixef(b11.1)[, 1]))
+(dordlogit.new(fixef(b12.1)[, 1]))
 ```
 which gives an expected value
 
 ```{r}
-sum(dordlogit.new(fixef(b11.1)[, 1]) * 1:7)
+sum(dordlogit.new(fixef(b12.1)[, 1]) * 1:7)
 ```
 
 but if we substract 0.5
 
 ```{r}
-(dordlogit.new(fixef(b11.1)[, 1], phi = 0.5))
+(dordlogit.new(fixef(b12.1)[, 1], phi = 0.5))
 ```
 then we have a higher expected value
 
 ```{r}
-sum(dordlogit.new(fixef(b11.1)[, 1], phi = 0.5) * 1:7)
+sum(dordlogit.new(fixef(b12.1)[, 1], phi = 0.5) * 1:7)
 ```
 
 
@@ -262,8 +701,8 @@ inits <- list(
   contact = 0
 )
 a_file <- here::here("fits", "b11_02.rds")  # rds file location
-b11.2 <- readRDS(file = a_file)  # load the file
-# b11.2 <- brms::brm(data = d,
+b12.2 <- readRDS(file = a_file)  # load the file
+# b12.2 <- brms::brm(data = d,
 #                    family = cumulative,
 #                    response ~ 1 + action + intention + contact,
 #                    prior = c(prior(normal(0, 10), class = Intercept),
@@ -271,14 +710,14 @@ b11.2 <- readRDS(file = a_file)  # load the file
 #                    iter = 2000, warmup = 1000, cores = 4, chains = 2,
 #                    inits = list(inits, inits),
 #                    seed = 11)
-# b11.2 <- add_criterion(b11.2, c("loo", "waic"))
-# saveRDS(object = b11.2, file = a_file)
+# b12.2 <- add_criterion(b12.2, c("loo", "waic"))
+# saveRDS(object = b12.2, file = a_file)
 ```
 
 and the summary is
 
 ```{r}
-summary(b11.2)
+summary(b12.2)
 ```
 
 
@@ -310,8 +749,8 @@ inits <- list(
   `contact:intention` = 0
 )
 a_file <- here::here("fits", "b11_03.rds")  # rds file location
-b11.3 <- readRDS(file = a_file)  # load the file
-# b11.3 <- brms::brm(data = d,
+b12.3 <- readRDS(file = a_file)  # load the file
+# b12.3 <- brms::brm(data = d,
 #                    family = cumulative,
 #                    response ~ 1 + action + intention + contact + action:intention + contact:intention,
 #                    prior = c(prior(normal(0, 10), class = Intercept),
@@ -319,226 +758,27 @@ b11.3 <- readRDS(file = a_file)  # load the file
 #                    iter = 2000, warmup = 1000, cores = 4, chains = 2,
 #                    inits = list(inits, inits),
 #                    seed = 11)
-# b11.3 <- add_criterion(b11.3, c("loo", "waic"))
-# saveRDS(object = b11.3, file = a_file)
+# b12.3 <- add_criterion(b12.3, c("loo", "waic"))
+# saveRDS(object = b12.3, file = a_file)
 ```
 
 
 the summary 
 
 ```{r}
-summary(b11.3)
+summary(b12.3)
 ```
 
 
 and comparing the 3 models
 
 ```{r}
-loo_compare(b11.1, b11.2, b11.3, criterion = "waic")
-```
-
-
-## Zero-inflated outcomes
-
-
-## Over-dispersed outcomes
-
-### Beta-binomial
-
-#### Beta-binomial distribution
-
-The beta distribution is
-
-$$
-\mathcal{Beta}(x|\alpha, \beta) =
-\frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} x^{\alpha -1} (1-x)^{\beta -1} =
-\frac{1}{B(\alpha, \beta)} x^{\alpha -1} (1-x)^{\beta -1}, 0 \leq x \leq 1
-$$
-which is not exactly the format used by McElrath.  He uses the following
-shape parameters
-
-$$
-\mu = \bar{p} = \frac{\alpha}{\alpha + \beta} \\
-\kappa = \theta = \alpha + \beta
-$$
-
-The function to convert from the mean and kappa to the mathematical $\alpha$
-and $\beta$, as provided by Krushke, is
-
-```{r}
-betaABfromMeanKappa <- function(mean, kappa) {
-  stopifnot(mean > 0 & mean < 1)
-  stopifnot(kappa > 0)
-  a <- mean * kappa
-  b <- (1 - mean) * kappa
-  list(a = a, b = b)
-}
-```
-
-
-The beta-binomial distribution is not defined in `brms`.  We need to define the 
-family in ``brms` as well as a `stan_funs()` and `stanvar()`.
-
-```{r}
-beta_binomial2 <- custom_family(
-  "beta_binomial2", dpars = c("mu", "phi"),
-  links = c("logit", "log"), lb = c(NA, 0),
-  type = "int", vars = "vint1[n]"
-)
-
-stan_funs <- "
-  real beta_binomial2_lpmf(int y, real mu, real phi, int T) {
-    return beta_binomial_lpmf(y | T, mu * phi, (1 - mu) * phi);
-  }
-  int beta_binomial2_rng(real mu, real phi, int T) {
-    return beta_binomial_rng(T, mu * phi, (1 - mu) * phi);
-  }
-"
-
-stanvars <- stanvar(scode = stan_funs, block = "functions")
+loo_compare(b12.1, b12.2, b12.3, criterion = "waic")
 ```
 
 
 
-### Beta-binomial model
-
-
-There is an error in the model defined by McElrath, to concur with his code
-at 11.26, the model is
-
-$$
-A_i \sim \mathcal{BetaBinomial}(n_i, \bar{p}_i, \theta) \\
-logit(\bar{p}_i) = \alpha \\
-\alpha \sim \mathcal{N}(0, 2) \\
-\theta \sim \mathcal{Exponential}(1)
-$$
-
-the data used is
-
-```{r}
-data(UCBadmit)
-d <- UCBadmit
-```
-
-
-which we fit as follows
-
-```{r}
-a_file <- here::here("fits", "b11_05.rds")  # rds file location
-b11.5 <- readRDS(file = a_file)  # load the file
-# b11.5 <- brm(
-#   data = d,
-#   family = beta_binomial2,
-#   admit | vint(applications) ~ 1,
-#   prior = c(prior(normal(0, 2), class = Intercept),
-#             prior(exponential(1), class = phi)),
-#   iter = 4000, warmup = 1000, cores = 4, chains = 2,
-#   stanvars = stanvars,
-#   seed = 11)
-# saveRDS(object = b11.5, file = a_file)
-```
-
-and the posterior data which *represents the distribution rather than the data*
-
-```{r}
-bpost11.5 <- posterior_samples(b11.5)
-head(bpost11.5)
-```
-
-and the median ans percentile-based interval
-
-
-```{r}
-intrvl.qi <- bpost11.5 %>%
-  tidybayes::median_qi(inv_logit_scaled(b_Intercept)) %>%
-  mutate(across(.cols = where(is.numeric), .fns = round, digits = 3))
-intrvl.qi
-```
-
-and the high-density interval is about the same.
-
-```{r}
-intrvl.hdi <- bpost11.5 %>%
-  tidybayes::median_hdi(inv_logit_scaled(b_Intercept)) %>%
-  mutate(across(.cols = where(is.numeric), .fns = round, digits = 3))
-intrvl.hdi
-```
-
-### Negative-binomial or gamma-Poisson
-
-#### Gamma-Poisson distribution
-
-First we illustrate the gamma-poisson with different combinations of $\mu$ and
-$\theta$
-
-
-```{r}
-gpdf <- crossing(mu    = c(1, 5, 9), theta = c(1, 5, 9)) %>% 
-  expand(nesting(mu, theta), 
-         x = seq(from = 0, to = 27, length.out = 100)) %>%
-  mutate(density    = rethinking::dgamma2(x, mu, theta),
-         mu_char    = paste("mu", mu, sep = "=="),
-         theta_char = paste("theta", theta, sep = "=="))
-gpdf
-```
-
-and the plot
-
-```{r}
-p <- ggplot(data = gpdf) +
-  geom_ribbon(aes(x = x, ymin = 0, ymax = density),
-              fill = "maroon1") +
-  geom_vline(aes(xintercept = mu),
-             color = "maroon", linetype = 3) +
-  scale_y_continuous(NULL, labels = NULL) +
-  labs(title = "Gamma can take many shapes",
-       subtitle = "(dotted vertical lines mark off the means)",
-       x = "parameter space") +
-  coord_cartesian(xlim = c(0, 25)) +
-  ggthemes::theme_hc() +
-  theme(axis.ticks.y = element_blank(),
-        plot.background = element_rect(fill = "grey92")) +
-  facet_grid(theta_char~mu_char, labeller = label_parsed)
-p
-```
-
-
-#### Gamma-Poisson model
-
-
-The model is
-
-$$
-A_i \sim \mathcal{NegBinomial}(\lambda_i, \theta) \\
-logit(\lambda_i) = \alpha \\
-\alpha \sim \mathcal{N}(0, 10) \\
-\theta \sim \mathcal{Gamma}(0.01, 0.01)
-$$
-using tthe data
-
-
-```{r}
-data(UCBadmit)
-d <- UCBadmit
-```
-
-
-the fit is
-
-
-```{r}
-a_file <- here::here("fits", "b11_06.rds")  # rds file location
-b11.6 <- readRDS(file = a_file)  # load the file
-# b11.6 <-
-#   brm(data = d,
-#       family = negbinomial,
-#       admit ~ 1,
-#       prior = c(prior(normal(0, 10), class = Intercept),
-#                 prior(gamma(0.01, 0.01), class = shape)),  # this is the brms default
-#       iter = 4000, warmup = 1000, cores = 2, chains = 2,
-#       seed = 11)
-# saveRDS(object = b11.6, file = a_file)
-```
+## Ordered categorical predictors
 
 
 

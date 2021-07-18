@@ -965,11 +965,15 @@ $$
 ### Predictors matched to outcomes
 
 
+The career are the outcomes.  We now predict the career using a trait of
+the career (outcome itself) which is the income in this case.
+
 ```{r}
 # simulate career choices among 500 individuals
 n <- 500  # number of individuals
 income <- c("1" = 1, "2" = 2, "3" = 5)  # expected income of each career
-score  <- 0.5 * income  # scores for each career, based on income
+# scores for each career, based on income
+score  <- 0.5 * income
 
 
 # next line converts scores to probabilities
@@ -996,8 +1000,18 @@ d %>%
   mutate(pct = 100 * n / sum(n),
          prob = n / sum(n))
 # which is very close to the theoretical softmax from above
-round(prob, 3)
+# round(prob, 3)
 ```
+
+and plot the frequency of each career
+
+```{r}
+ggplot(d, aes(x = as.factor(career))) +
+  geom_bar(aes(y=..count.. / sum(..count..)), fill = "wheat") +
+  ggthemes::theme_few() +
+  labs(x = "career")
+```
+
 
 
 
@@ -1111,6 +1125,8 @@ category is a model in itself, we use an intercept per category.
 The 3rd category is the *pivot* and identified as such in the `brm()` function below.
 The default of `brm()` is to take the first category as the pivot.
 
+
+
 ```{r}
 a_file <- here::here("fits", "b11_13null.rds")
 b11.13null <- readRDS(a_file)
@@ -1207,70 +1223,70 @@ and so the model fits are
 
 ```{r}
 a_file <- here::here("fits", "b11_13a.rds")
-# b11.13a <- readRDS(a_file)
-b11.13a <- brm(data = d, 
-      family = categorical(link = logit, refcat = 3),
-      bf(career ~ 1,
-         nlf(mu1 ~ a1 + b1 * 1),
-         nlf(mu2 ~ a2 + b2 * 2),
-         a1 + a2 + b1 + b2 ~ 1),
-      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
-                prior(normal(0, 1), class = b, nlpar = a2),
-                prior(normal(0, 0.5), class = b, nlpar = b1),
-                prior(normal(0, 0.5), class = b, nlpar = b2)),
-      cores = detectCores(), seed = 11)
-b11.13a <- add_criterion(b11.13a, criterion = c("waic", "loo"))
-saveRDS(b11.13a, file = a_file)
+b11.13a <- readRDS(a_file)
+# b11.13a <- brm(data = d, 
+#       family = categorical(link = logit, refcat = 3),
+#       bf(career ~ 1,
+#          nlf(mu1 ~ a1 + b1 * 1),
+#          nlf(mu2 ~ a2 + b2 * 2),
+#          a1 + a2 + b1 + b2 ~ 1),
+#       prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+#                 prior(normal(0, 1), class = b, nlpar = a2),
+#                 prior(normal(0, 0.5), class = b, nlpar = b1),
+#                 prior(normal(0, 0.5), class = b, nlpar = b2)),
+#       cores = detectCores(), seed = 11)
+# b11.13a <- add_criterion(b11.13a, criterion = c("waic", "loo"))
+# saveRDS(b11.13a, file = a_file)
 
 a_file <- here::here("fits", "b11_13b.rds")
-# b11.13b <- readRDS(a_file)
-b11.13b <- brm(data = d, 
-      family = categorical(link = logit, refcat = 3),
-      bf(career ~ 1,
-         nlf(mu1 ~ a1 + b1 * 1),
-         nlf(mu2 ~ a2 + b2 * 2),
-         a1 + a2 + b1 + b2 ~ 1),
-      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
-                prior(normal(0, 1), class = b, nlpar = a2),
-                prior(normal(0, 0.5), class = b, nlpar = b1, lb = 0),
-                prior(normal(0, 0.5), class = b, nlpar = b2, lb = 0)),
-      cores = detectCores(), seed = 11,
-      control = list(adapt_delta = .99))
-b11.13b <- add_criterion(b11.13b, criterion = c("waic", "loo"))
-saveRDS(b11.13b, file = a_file)
+b11.13b <- readRDS(a_file)
+# b11.13b <- brm(data = d, 
+#       family = categorical(link = logit, refcat = 3),
+#       bf(career ~ 1,
+#          nlf(mu1 ~ a1 + b1 * 1),
+#          nlf(mu2 ~ a2 + b2 * 2),
+#          a1 + a2 + b1 + b2 ~ 1),
+#       prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+#                 prior(normal(0, 1), class = b, nlpar = a2),
+#                 prior(normal(0, 0.5), class = b, nlpar = b1, lb = 0),
+#                 prior(normal(0, 0.5), class = b, nlpar = b2, lb = 0)),
+#       cores = detectCores(), seed = 11,
+#       control = list(adapt_delta = .99))
+# b11.13b <- add_criterion(b11.13b, criterion = c("waic", "loo"))
+# saveRDS(b11.13b, file = a_file)
 
 a_file <- here::here("fits", "b11_13c.rds")
-# b11.13c <- readRDS(a_file)
-b11.13c <-
-  brm(data = d, 
-      family = categorical(link = logit, refcat = 3),
-      bf(career ~ 1,
-         nlf(mu1 ~ a1 + b * 1),
-         nlf(mu2 ~ a2 + b * 2),
-         a1 + a2 + b ~ 1),
-      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
-                prior(normal(0, 1), class = b, nlpar = a2),
-                prior(normal(0, 0.5), class = b, nlpar = b)),
-      cores = detectCores(), seed = 11)
-b11.13c <- add_criterion(b11.13c, criterion = c("waic", "loo"))
-saveRDS(b11.13c, file = a_file)
+b11.13c <- readRDS(a_file)
+# b11.13c <-
+#   brm(data = d, 
+#       family = categorical(link = logit, refcat = 3),
+#       bf(career ~ 1,
+#          nlf(mu1 ~ a1 + b * 1),
+#          nlf(mu2 ~ a2 + b * 2),
+#          a1 + a2 + b ~ 1),
+#       prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+#                 prior(normal(0, 1), class = b, nlpar = a2),
+#                 prior(normal(0, 0.5), class = b, nlpar = b)),
+#       cores = detectCores(), seed = 11)
+# b11.13c <- add_criterion(b11.13c, criterion = c("waic", "loo"))
+# saveRDS(b11.13c, file = a_file)
 
 a_file <- here::here("fits", "b11_13d.rds")
-# b11.13d <- readRDS(a_file)
-b11.13d <-
-  brm(data = d, 
-      family = categorical(link = logit, refcat = 3),
-      bf(career ~ 1,
-         nlf(mu1 ~ a1 + b * 1),
-         nlf(mu2 ~ a2 + b * 2),
-         a1 + a2 + b ~ 1),
-      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
-                prior(normal(0, 1), class = b, nlpar = a2),
-                prior(normal(0, 0.5), class = b, nlpar = b, lb = 0)),
-      cores = detectCores(), seed = 11,
-      control = list(adapt_delta = .99))
-b11.13d <- add_criterion(b11.13d, criterion = c("waic", "loo"))
-saveRDS(b11.13d, file = a_file)
+b11.13d <- readRDS(a_file)
+# b11.13d <-
+#   brm(data = d, 
+#       family = categorical(link = logit, refcat = 3),
+#       bf(career ~ 1,
+#          nlf(mu1 ~ a1 + b * 1),
+#          nlf(mu2 ~ a2 + b * 2),
+#          a1 + a2 + b ~ 1),
+#       prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+#                 prior(normal(0, 1), class = b, nlpar = a2),
+#                 prior(normal(0, 0.5), class = b, nlpar = b, lb = 0)),
+#       cores = detectCores(), seed = 11,
+#       control = list(adapt_delta = .99))
+# b11.13d <- add_criterion(b11.13d, criterion = c("waic", "loo"))
+# saveRDS(b11.13d, file = a_file)
 ```
 
 and comparing the performance of the models
@@ -1283,7 +1299,7 @@ loo_compare(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %
 
 The results are different than Kurtz, this is caused by the facts that the models
 have very similar performance and therefore it doesn't take much to change the ranking.
-Most numbers, e.g. looic are similar.
+Most numbers, e.g. `looic` are similar.
 
 and the model weights
 
@@ -1293,7 +1309,10 @@ model_weights(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %
 ```
 
 
+
 ### Predictors matched to observations
+
+
 
 
 
