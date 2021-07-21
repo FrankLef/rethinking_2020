@@ -379,19 +379,19 @@ $$
 ```{r}
 a_file <- here::here("fits", "b12_02.rds")
 b12.2 <- readRDS(file = a_file)
-b12.2 <- brm(data = d, 
-      family = negbinomial(link = "identity"),
-      bf(total_tools ~ exp(b0) * population^b1 / g,
-         b0 + b1 ~ 0 + cid,
-         g ~ 1,
-         nl = TRUE),
-      prior = c(prior(normal(1, 1), nlpar = b0),
-                prior(exponential(1), nlpar = b1, lb = 0),
-                prior(exponential(1), nlpar = g, lb = 0),
-                prior(exponential(1), class = shape)),
-      cores = detectCores(),
-      seed = 12,
-      control = list(adapt_delta = .95))
+# b12.2 <- brm(data = d, 
+#       family = negbinomial(link = "identity"),
+#       bf(total_tools ~ exp(b0) * population^b1 / g,
+#          b0 + b1 ~ 0 + cid,
+#          g ~ 1,
+#          nl = TRUE),
+#       prior = c(prior(normal(1, 1), nlpar = b0),
+#                 prior(exponential(1), nlpar = b1, lb = 0),
+#                 prior(exponential(1), nlpar = g, lb = 0),
+#                 prior(exponential(1), class = shape)),
+#       cores = detectCores(),
+#       seed = 12,
+#       control = list(adapt_delta = .95))
 # b12.2 <- add_criterion(b12.2, criterion = c("waic", "loo"))
 # saveRDS(object = b12.2, file = a_file)
 ```
@@ -403,52 +403,105 @@ summary(b12.2)
 ```
 
 
-
-
-The model is
-
-$$
-A_i \sim \mathcal{NegBinomial}(\lambda_i, \theta) \\
-logit(\lambda_i) = \alpha \\
-\alpha \sim \mathcal{N}(0, 10) \\
-\theta \sim \mathcal{Gamma}(0.01, 0.01)
-$$
-using tthe data
-
-
-```{r}
-data(UCBadmit)
-d <- UCBadmit
-```
-
-
-the fit is
-
-
-```{r}
-a_file <- here::here("fits", "b11_06.rds")  # rds file location
-b12.6 <- readRDS(file = a_file)  # load the file
-# b12.6 <-
-#   brm(data = d,
-#       family = negbinomial,
-#       admit ~ 1,
-#       prior = c(prior(normal(0, 10), class = Intercept),
-#                 prior(gamma(0.01, 0.01), class = shape)),  # this is the brms default
-#       iter = 4000, warmup = 1000, cores = 2, chains = 2,
-#       seed = 11)
-# saveRDS(object = b12.6, file = a_file)
-```
-
-
 ### Poisson-lognormal
 
-This is an extra section.  The result is so nice it is worth adding here. See
+This is an extra section.  The result is so useful it is worth adding here. See
 [Kurtz blog](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/).
 
+it was also saved in a local file called **Poisson-lognormal_mixture_Solomon Kurz.html**
+in **C:\Users\Public\MyStudies\Rethinking_docs**
 
 ## Zero-inflated outcomes
 
 
+### Zero-inflated Poisson
+
+With zero-inflated Poisson both parameters $p$ and $\lambda$ can have their own
+equation such as
+
+
+$$
+\begin{align*}
+prod_i &\sim \mathcal{ZIPoisson}(p_i, \lambda_i) \\
+logit(p_i) &= \alpha_p + \beta_p x_i \\
+log(\lambda_i) &= \alpha_\lambda + \beta_\lambda x_i \\
+\end{align*}
+$$
+
+
+
+```{r}
+drink_prob <- 0.2  # drink 20% of the days
+work_rate <- 1  # production = 1 manuscript per day
+
+# simulate 1 year of drinking
+set.seed(365)  # same seed as McElreath
+drink <- rbinom(n = 365, size = 1, prob = drink_prob)
+# simulate 1 year of work
+# set.seed(365)
+work <- rpois(n = length(drink), lambda = work_rate)
+# simulate production
+prod <- (1 - drink) * work
+
+# create the dataframe
+d <- data.frame(
+  drink = factor(drink, levels = 1:0),
+  prod = prod
+  )
+```
+
+
+plot the data
+
+```{r}
+ggplot(d, aes(x = prod)) +
+  geom_histogram(aes(fill = drink), binwidth = 1) +
+  scale_fill_manual(values = paletteer::paletteer_d("ggthemr::fresh", direction = -1)) +
+  ggthemes::theme_tufte()
+```
+#### Model and fit
+
+$$
+\begin{align*}
+prod_i &\sim \mathcal{ZIPoisson}(p, \lambda) \\
+p &= \alpha_p \\
+log(\lambda) &= \alpha_\lambda \\
+\alpha_p &\sim \mathcal{Beta}(2, 6) \\
+\alpha_\lambda &\sim \mathcal{N}(1, 0.5)
+\end{align*}
+$$
+
+In `brms`, $p_i$ is denoted `zi`. To use a non-default prior for `zi`, make
+sure to indicate `class = zi`. **Important to read [Kurtz](kurtz2020b)**
+
+
+```{r}
+a_file <- here::here("fits", "b12_03.rds")
+b12.3 <- readRDS(file = a_file)
+# b12.3 <- brm(data = d, 
+#       family = zero_inflated_poisson,
+#       prod ~ 1,
+#       prior = c(prior(normal(1, 0.5), class = Intercept),
+#                 prior(beta(2, 6), class = zi)),  # the brms default is beta(1, 1)
+#       cores = detectCores(),
+#       seed = 12) 
+# b12.3 <- add_criterion(b12.3, criterion = c("waic", "loo"))
+# saveRDS(object = b12.3, file = a_file)
+```
+
+
+and the summary
+
+```{r}
+summary(b12.3)
+```
+
+with $\alpha_\lambda$ on natural scale being
+
+```{r}
+fixef(b12.3)
+exp(fixef(b12.3))
+```
 
 
 ## Ordered categorical outcomes
@@ -459,18 +512,13 @@ This is an extra section.  The result is so nice it is worth adding here. See
 ```{r}
 data(Trolley)
 d <- Trolley
+rm(Trolley)
+skimr::skim(d)
 ```
 
 and we can describe the data using the `summarytools` which does a great
 job at creating that sort or report.
 
-
-```{r}
-# source:
-# https://cran.r-project.org/web/packages/summarytools/vignettes/Recommendations-rmarkdown.html
-# use print to see in HTML
-print(summarytools::dfSummary(Trolley, style = "grid"), method = "render")
-```
 
 
 ### Describing and ordered distribution with intercepts
@@ -479,11 +527,12 @@ The histogram of response
 
 ```{r}
 p1 <- ggplot(d, aes(x = response)) +
-  geom_histogram(aes(fill = ..count..)) +
+  geom_histogram(aes(fill = ..count..), binwidth = 1) +
   scale_x_continuous(breaks = scales::breaks_width(width = 1)) +
-  scale_fill_paletteer_c(palette = "grDevices::Sunset") +
-  ggthemes::theme_fivethirtyeight() +
-  theme(legend.position = "none") +
+  scale_fill_paletteer_c(palette = "pals::ocean.deep") +
+  ggthemes::theme_tufte() +
+  theme(legend.position = "none",
+        panel.background = element_rect(fill = "tan")) +
   labs(title = "Histogram of Trolley responses")
 # p1
 ```
@@ -503,32 +552,35 @@ p2 <- ggplot(d.p2, aes(x = response, y = cum_pct)) +
   scale_y_continuous(breaks = scales::breaks_width(width = 0.2)) +
   ggthemes::theme_fivethirtyeight() +
   labs(title = "Cumulative proportions", y = "cumulative probabilities")
-p2
+# p2
 ```
 
 And the plot of `logit`
 
 ```{r}
-# d.p3 <- d %>%
-#   filter(response < 7) %>%
-#   mutate(logit = log(cum_pct / (1 - cum_pct)),
-#          logit_ctr = scale(logit, center = TRUE, scale = FALSE))
-# # d.p3
-# p3 <- ggplot(d.p3, aes(x = response, y = logit)) +
-#   geom_line() +
-#   geom_point() +
-#     scale_x_continuous(breaks = scales::breaks_width(width = 1)) +
-#   scale_y_continuous(breaks = scales::breaks_width(width = 1)) +
-#   ggthemes::theme_fivethirtyeight() +
-#   labs(title = "Log of Cumulative Odds",
-#        y = "log of cumulative odds")
+d.p3 <- d %>%
+  count(response) %>%
+  mutate(pct = n / sum(n),
+         cum_pct = cumsum(pct),
+         logit = log(cum_pct / (1 - cum_pct)),
+         logit_ctr = scale(logit, center = TRUE, scale = FALSE))
+# d.p3
+p3 <- ggplot(d.p3, aes(x = response, y = logit)) +
+  geom_line() +
+  geom_point() +
+    scale_x_continuous(breaks = scales::breaks_width(width = 1)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 1)) +
+  ggthemes::theme_fivethirtyeight() +
+  labs(title = "Log of Cumulative Odds",
+       y = "log of cumulative odds (centered)")
 # p3
 ```
 
-and the 3 plots in figure 11.1 are
+and the 3 plots in figure 12.4 are
 
 ```{r}
-# gridExtra::grid.arrange(p1, p2, p3, nrow = 1)
+(p1 + p2 + p3) +
+  plot_annotation(title = "Figure 12.4")
 ```
 
 
@@ -536,9 +588,12 @@ and the 3 plots in figure 11.1 are
 The model is
 
 $$
-R_i \sim Ordered(\textbf{p}) \\
-logit(p_k) = \alpha_k \\
-\alpha_k \sim \mathcal{N}(0, 10)
+\begin{align*}
+response_i &\sim \mathcal{OrderedLogit}(\textbf{p}) \\
+logit(p_k) &= \alpha_k - \phi \\
+phi &= 0 \\
+\alpha_k &\sim \mathcal{N}(0, 1.5)
+\end{align*}
 $$
 and the fit with brms
 
@@ -552,40 +607,40 @@ inits <- list(
   `Intercept[5]` = 2,
   `Intercept[6]` = 2.5
 )
-inits_list <- list(inits, inits)
-a_file <- here::here("fits", "b11_01.rds")  # rds file location
-stopifnot(file.exists(a_file))
-b12.1 <- readRDS(file = a_file)  # load the file
-# b12.1 <- brm(
+inits_list <- list(inits, inits, inits, inits)
+a_file <- here::here("fits", "b12_04.rds")
+b12.4 <- readRDS(file = a_file)
+# message("This takes at least 5 min.")
+# b12.4 <- brm(
 #   data = d,
 #   family = cumulative,
 #   response ~ 1,
 #   prior = c(
-#     prior(normal(0, 10), class = Intercept)),
-#   iter = 2000, warmup = 1000, chains = 4, cores = 4,
+#     prior(normal(0, 1.5), class = Intercept)),
+#   cores = detectCores(),
 #   # the start values
 #   inits = inits_list,
-#   seed = 11)
-# b12.1 <- add_criterion(b12.1, c("loo", "waic"))
-# saveRDS(object = b12.1, file = a_file)
+#   seed = 12)
+# b12.4 <- add_criterion(b12.4, c("loo", "waic"))
+# saveRDS(object = b12.4, file = a_file)
 ```
 
 
 which gives the summary
 
 ```{r}
-print(b12.1)
+print(b12.4)
 ```
 
 and we convert the intercepts to the normal scale
 
 ```{r}
-b12.1 %>%
+b12.4 %>%
   fixef() %>%
   brms::inv_logit_scaled()
 # which we can also do with stats:plogis()
 # see appendix A
-# b12.1 %>%
+# b12.4 %>%
 #   fixef() %>%
 #   stats::plogis()
 ```
@@ -596,7 +651,7 @@ They must be computed using a posterior sample.
 
 
 ```{r}
-posterior_samples(b12.1) %>%
+posterior_samples(b12.4) %>%
   select(starts_with("b_")) %>%
   mutate(across(.cols = everything(), .fns = brms::inv_logit_scaled)) %>%
   pivot_longer(cols = everything(), names_to = "key") %>%
@@ -611,8 +666,31 @@ posterior_samples(b12.1) %>%
 
 ### Adding predictor variables
 
+> Thsi form automatically ensure the correct ordering of the outcom values,
+while still morphing the likelihood of each individual valueas the predictor $x_i$
+changes value. Why is the linear model $\phi$ substracted from each intercept? 
+Because if we decrease the log-cumulative-odds of every outcome value $k$ below
+the maximum, this necessarily shifts probability mass upwards towards higher 
+outcome values.
+
+$$
+\begin{align*}
+\log{\frac{Pr(y_i \le k)}{1-Pr(y_i \le k)}} &= \alpha_k - \phi_i \\
+\phi_i &= \beta x_i
+\end{align*}
+$$
+
+For example lets take model b12.4
+
+
+```{r}
+fixef(b12.4)
+```
+
+
 #### Logistic / Logit functions
-See the appendix A of this book for a detailed tratment of all these functions.
+
+See the appendix A of this book for a detailed treatment of all these functions.
 They will be added the suffix *.new* to identify them.
 
 The `logistic()` and `inv_logit()` functions are actually the same as 
@@ -632,150 +710,120 @@ dordlogit.new <- function(x, phi = 0L, log = FALSE) {
 }
 ```
 
-which gives about the same result as R code 11.9 in McElrath.s
+which gives about the same result as R code 11.9 in McElreath on p. 386
+with R code 12.20, and Kurtz.
 
 ```{r}
-(dordlogit.new(fixef(b12.1)[, 1]))
+probk <- dordlogit.new(fixef(b12.4)[, 1])
+round(probk, 2)
 ```
+which gives and expected value of
 
 ```{r}
-fixef(b12.1)[, 1]
-stats::plogis(q = fixef(b12.1)[, 1], lower.tail = TRUE)
-stats::plogis(q = fixef(b12.1)[, 1], lower.tail = FALSE)
-stats::plogis(q = fixef(b12.1)[, 1])
-stats::dlogis(x = fixef(b12.1)[, 1])
+sum(1:7 * probk)
 ```
+
+
 
 #### Subsracting from the log-cumulative odds
 
 If we substract from the *log-cumulative odds* then we shift the probability
 mass to higher outcome values.
 
-For example with model b12.1
+For example with model b12.4
 
 ```{r}
-(dordlogit.new(fixef(b12.1)[, 1]))
+probk <- dordlogit.new(fixef(b12.4)[, 1])
+round(probk, 2)
 ```
 which gives an expected value
 
 ```{r}
-sum(dordlogit.new(fixef(b12.1)[, 1]) * 1:7)
+sum(1:7 * probk)
 ```
 
 but if we substract 0.5
 
 ```{r}
-(dordlogit.new(fixef(b12.1)[, 1], phi = 0.5))
+(dordlogit.new(fixef(b12.4)[, 1], phi = 0.5))
 ```
 then we have a higher expected value
 
 ```{r}
-sum(dordlogit.new(fixef(b12.1)[, 1], phi = 0.5) * 1:7)
+sum(dordlogit.new(fixef(b12.4)[, 1], phi = 0.5) * 1:7)
 ```
-
-
 
 #### Ordered categorical with several predictors
 
 Our model with several predictors is
 
 $$
-R_i \sim Ordered(\textbf{p}) \\
-logit(Pr(y_i \leq k))= \frac{Pr(y_i \leq k)}{1 - Pr(y_i \leq k)}  = \alpha_k - \phi_i \\
-\alpha_k \sim \mathcal{N}(0, 10) \\
-\phi_i = \beta_{action} \cdot action_i + \beta_{intention} \cdot intention_i + \beta_{contact} \cdot contact_i
+\begin{align*}
+R_i &\sim OrderedLogit(\textbf{p}) \\
+logit(Pr(y_i \leq k)) &= \frac{Pr(y_i \leq k)}{1 - Pr(y_i \leq k)}  = \alpha_k - \phi_i \\
+\phi_i &= \beta_{action} \cdot action_i + \beta_{intention} \cdot intention_i +  \beta_{contact} \cdot contact_i + \beta{a,i} \cdot(action_i \times intention_i) +
+\beta{c,i} \cdot(contact_i \times intention_i) \\
+\alpha_k &\sim \mathcal{N}(0, 1.5) \\
+\beta_{\bullet} &\sim \mathcal{N}(0, 0.5)
+\end{align*}
 $$
 
-and the fit is
-
-```{r}
-inits <- list(
-  `Intercept[1]` = -1.9,
-  `Intercept[2]` = -1.2,
-  `Intercept[3]` = -0.7,
-  `Intercept[4]` = 0.2,
-  `Intercept[5]` = 0.9,
-  `Intercept[6]` = 1.8,
-  action = 0,
-  intention = 0,
-  contact = 0
-)
-a_file <- here::here("fits", "b11_02.rds")  # rds file location
-b12.2 <- readRDS(file = a_file)  # load the file
-# b12.2 <- brms::brm(data = d,
-#                    family = cumulative,
-#                    response ~ 1 + action + intention + contact,
-#                    prior = c(prior(normal(0, 10), class = Intercept),
-#                              prior(normal(0, 10), class = b)),
-#                    iter = 2000, warmup = 1000, cores = 4, chains = 2,
-#                    inits = list(inits, inits),
-#                    seed = 11)
-# b12.2 <- add_criterion(b12.2, c("loo", "waic"))
-# saveRDS(object = b12.2, file = a_file)
-```
-
-and the summary is
-
-```{r}
-summary(b12.2)
-```
-
-
-and the model with interactions id 
-
-
-$$
-R_i \sim Ordered(\textbf{p}) \\
-logit(Pr(y_i \leq k))= \frac{Pr(y_i \leq k)}{1 - Pr(y_i \leq k)}  = \alpha_k - \phi_i \\
-\alpha_k \sim \mathcal{N}(0, 10) \\
-\phi_i = \beta_{action} \cdot A_i + \beta_{intention} \cdot I_i + \beta_{contact} \cdot C_i + \beta_{C,I} C_i \cdot + \beta_{A,I} A_i \cdot I_i
-$$
 
 and the fit is
 
 
 ```{r}
-inits <- list(
-  `Intercept[1]` = -1.9,
-  `Intercept[2]` = -1.2,
-  `Intercept[3]` = -0.7,
-  `Intercept[4]` = 0.2,
-  `Intercept[5]` = 0.9,
-  `Intercept[6]` = 1.8,
-  action = 0,
-  intention = 0,
-  contact = 0,
-  `action:intention` = 0,
-  `contact:intention` = 0
-)
-a_file <- here::here("fits", "b11_03.rds")  # rds file location
-b12.3 <- readRDS(file = a_file)  # load the file
-# b12.3 <- brms::brm(data = d,
+a_file <- here::here("fits", "b12_05.rds")
+b12.5 <- readRDS(file = a_file)
+# message("This takes at least 10 min.")
+# b12.5 <- brms::brm(data = d,
 #                    family = cumulative,
-#                    response ~ 1 + action + intention + contact + action:intention + contact:intention,
-#                    prior = c(prior(normal(0, 10), class = Intercept),
-#                              prior(normal(0, 10), class = b)),
-#                    iter = 2000, warmup = 1000, cores = 4, chains = 2,
-#                    inits = list(inits, inits),
-#                    seed = 11)
-# b12.3 <- add_criterion(b12.3, c("loo", "waic"))
-# saveRDS(object = b12.3, file = a_file)
+#                    formula = response ~ 1 + action + intention + contact + 
+#                      action:intention + contact:intention,
+#                    prior = c(prior(normal(0, 1.5), class = Intercept),
+#                              prior(normal(0, 0.5), class = b)),
+#                    cores = detectCores(),
+#                    # inits = list(inits, inits),
+#                    seed = 12)
+# b12.5 <- add_criterion(b12.5, c("loo", "waic"))
+# saveRDS(object = b12.5, file = a_file)
 ```
 
 
 the summary 
 
 ```{r}
-summary(b12.3)
+summary(b12.5)
 ```
 
 
-and comparing the 3 models
+and plot the coefficients
 
 ```{r}
-loo_compare(b12.1, b12.2, b12.3, criterion = "waic")
+get_variables(b12.5)
 ```
 
+
+
+```{r}
+
+labs <- paste0("beta[", 1:5, "]")
+
+b12.5_post <- gather_draws(model = b12.5, `b_action.*`, `b_contact.*`, `b_intention.*`,
+                           regex = TRUE)
+
+ggplot(b12.5_post, aes(x = .value, y = .variable)) +
+  geom_vline(xintercept = 0, alpha = 1/5, linetype = 3) +
+  stat_gradientinterval(.width = .5, size = 1, point_size = 3/2, shape = 21,
+                      point_fill = "darkgreen",
+                      fill ="green",
+                      color = "darkgreen") +
+  scale_x_continuous("marginal posterior", breaks = -5:0 / 4) +
+  coord_cartesian(xlim = c(-1.4, 0)) +
+  ggthemes::theme_hc() +
+  labs(x = "marginal posterior", y = NULL,
+       title = "Model b12.5 coefficients")
+```
 
 
 ## Ordered categorical predictors

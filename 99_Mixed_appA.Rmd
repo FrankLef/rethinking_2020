@@ -85,7 +85,7 @@ The `dordlogit()` is programmed by McElrath's [GitHub page](https://github.com/r
 as follows
 
 ```{r}
-dordlogit <- function( x , phi , a , log=FALSE ) {
+dordlogit <- function(x , phi , a , log=FALSE ) {
     a <- c( as.numeric(a) , Inf )
     p <- logistic( a[x] - phi )
     na <- c( -Inf , a )
