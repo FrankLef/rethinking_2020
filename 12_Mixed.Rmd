@@ -589,9 +589,9 @@ The model is
 
 $$
 \begin{align*}
-response_i &\sim \mathcal{OrderedLogit}(\textbf{p}) \\
+response_i &\sim \mathcal{Categorical}(\overrightarrow{p}) \\
 logit(p_k) &= \alpha_k - \phi \\
-phi &= 0 \\
+\phi &= 0 \\
 \alpha_k &\sim \mathcal{N}(0, 1.5)
 \end{align*}
 $$
@@ -675,7 +675,7 @@ outcome values.
 
 $$
 \begin{align*}
-\log{\frac{Pr(y_i \le k)}{1-Pr(y_i \le k)}} &= \alpha_k - \phi_i \\
+\log{\left[ \frac{Pr(y_i \le k)}{1-Pr(y_i \le k)} \right]} &= \alpha_k - \phi_i \\
 \phi_i &= \beta x_i
 \end{align*}
 $$
@@ -759,7 +759,7 @@ Our model with several predictors is
 
 $$
 \begin{align*}
-R_i &\sim OrderedLogit(\textbf{p}) \\
+response_i &\sim Categorical(\overrightarrow{p}) \\
 logit(Pr(y_i \leq k)) &= \frac{Pr(y_i \leq k)}{1 - Pr(y_i \leq k)}  = \alpha_k - \phi_i \\
 \phi_i &= \beta_{action} \cdot action_i + \beta_{intention} \cdot intention_i +  \beta_{contact} \cdot contact_i + \beta{a,i} \cdot(action_i \times intention_i) +
 \beta{c,i} \cdot(contact_i \times intention_i) \\
@@ -827,6 +827,114 @@ ggplot(b12.5_post, aes(x = .value, y = .variable)) +
 
 
 ## Ordered categorical predictors
+
+### Dirchlet distribution
+
+The Dirichlet distribution, used in this section, can be illustrated as follows
+
+```{r}
+set.seed(1805)  # seed from McElreath
+dp <- gtools::rdirichlet(10, alpha = rep(2, 7))  %>%
+  data.frame() %>%
+  setNames(1:7) %>%
+  mutate(row = seq_len(nrow(.))) %>%
+  pivot_longer(cols = -row, names_to = "index", values_to = "prob")
+
+ggplot(dp, aes(x = index, y = prob, group = row)) +
+  geom_line(aes(color = row == 3)) +
+  geom_point(aes(color = row == 3)) +
+  scale_color_manual(values = c("TRUE" = "darkgreen", "FALSE" = "lightgreen")) +
+  ggthemes::theme_hc() +
+  theme(legend.position = "none") +
+  labs(title = "Dirichlet distribution",
+       subtitle = "Figure 12.7",
+       x = "index of variable in vector",
+       y = "probability")
+```
+
+NOTE: The `brms` package also has a `rdirchlet()` function which is very useful
+when investigating priors. See @kurtz2020b for details.
+
+
+### The data
+
+
+```{r}
+data(Trolley)
+d <- Trolley
+rm(Trolley)
+d <- d %>% 
+  mutate(edu_new = 
+           recode_factor(edu,
+                  "Elementary School" = 1,
+                  "Middle School" = 2,
+                  "Some High School" = 3,
+                  "High School Graduate" = 4,
+                  "Some College" = 5, 
+                  "Bachelor's Degree" = 6,
+                  "Master's Degree" = 7,
+                  "Graduate Degree" = 8,
+                  .ordered = TRUE) %>% 
+           as.integer())
+
+d %>% 
+  distinct(edu, edu_new) %>% 
+  arrange(edu_new)
+```
+
+
+### Model and fit
+
+The model is
+
+$$
+\begin{align*}
+response_i &\sim \mathcal{Categorical}(\overrightarrow{p}) \\
+logit(p_k) &= \alpha_k - \phi_i \\
+\phi_i &= \beta_E \sum_{j=0}^{E_i-1} \delta_j + \beta_A \cdot action_i + \beta_I \cdot intention_i + \beta_C \cdot contact_i \\
+\alpha_k &\sim \mathcal{N}(0,1.5) \\
+\beta_A, \beta_I, \beta_C &\sim \mathcal{N}(0,1) \\
+\beta_E &\sim \mathcal{N}(0, 0.143) \\
+\overrightarrow{\delta} &\sim \mathcal{Dirichlet}([2,2,2,2,2,2,2])
+\end{align*}
+$$
+
+
+
+```{r}
+a_file <- here::here("fits", "b12_06.rds")
+b12.6 <- readRDS(file = a_file)
+# message("This takes at least 90 minutes. Yes, 90 min.")
+# b12.6 <- brm(data = d,
+#       family = cumulative,
+#       response ~ 1 + action + contact + intention + mo(edu_new),  # note the `mo()` syntax
+#       prior = c(prior(normal(0, 1.5), class = Intercept),
+#                 prior(normal(0, 1), class = b),
+#                 # note the new kinds of prior statements
+#                 # for monotonic variable edu_new
+#                 prior(normal(0, 0.143), class = b, coef = moedu_new),
+#                 prior(dirichlet(2, 2, 2, 2, 2, 2, 2), class = simo, coef = moedu_new1)),
+#       cores = detectCores(),
+#       seed = 12)
+# b12.6 <- add_criterion(b12.6, c("loo", "waic"))
+# saveRDS(object = b12.6, file = a_file)
+```
+
+```{r}
+summary(b12.6)
+```
+```{r}
+library(GGally)
+
+delta_labels <- c("Elem", "MidSch", "SHS", "HSG", "SCol", "Bach", "Mast", "Grad")
+
+dp <- posterior_samples(b12.6) %>% 
+  select(contains("simo_moedu_new1")) %>% 
+  setNames(paste0(delta_labels[2:8], "~(delta[", 1:7, "])"))
+
+GGally::ggpairs(dp, labeller = label_parsed) +
+  theme(strip.text = element_text(size = 8))
+```
 
 
 
