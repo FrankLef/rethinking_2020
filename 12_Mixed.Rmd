@@ -828,7 +828,7 @@ ggplot(b12.5_post, aes(x = .value, y = .variable)) +
 
 ## Ordered categorical predictors
 
-### Dirchlet distribution
+### Dirichlet distribution
 
 The Dirichlet distribution, used in this section, can be illustrated as follows
 
@@ -856,7 +856,7 @@ NOTE: The `brms` package also has a `rdirchlet()` function which is very useful
 when investigating priors. See @kurtz2020b for details.
 
 
-### The data
+### Data
 
 
 ```{r}
