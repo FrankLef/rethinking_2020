@@ -67,6 +67,9 @@ tmp$pal <- paletteer::paletteer_d("fishualize::Cirrhilabrus_solorensis")
 scales::show_col(tmp$pal)
 
 # few colors with good contrast
+tmp$pal <- paletteer::paletteer_d("futurevisions::atomic_clock")
+scales::show_col(tmp$pal)
+
 tmp$pal <- paletteer::paletteer_d("khroma::vibrant")
 scales::show_col(tmp$pal)
 

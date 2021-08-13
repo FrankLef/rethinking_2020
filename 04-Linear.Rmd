@@ -1159,12 +1159,14 @@ p
 data("cherry_blossoms")
 d <- cherry_blossoms
 d %>% skimr::skim()
+# data without NA
+d2 <- d %>%
+  drop_na()
 ```
 
 ```{r}
 colr <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
-d %>% drop_na() %>%
-  ggplot(aes(x = year, y = doy, color = temp)) +
+ggplot(d2, aes(x = year, y = doy, color = temp)) +
   geom_point(shape = 20, size = 2, alpha = 2/3) +
   scale_x_continuous(breaks = scales::breaks_width(width = 100)) +
   scale_color_gradientn(colors = colr) +
@@ -1174,6 +1176,150 @@ d %>% drop_na() %>%
   labs(title = "Cherry Blossom in Japan",
        subtitle = sprintf("%d observations", nrow(d)))
 ```
+
+#### Knots, degree and basis funcitons
+
+The knots used here are based on quantiles, othe ways are possible,
+
+```{r}
+nknots <- 15
+knots <- quantile(d$year, probs = seq(from = 0, to = 1, length.out = nknots))
+knots
+```
+
+```{r}
+colr <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
+ggplot(d2, aes(x = year, y = doy, color = temp)) +
+  geom_vline(xintercept = knots, color = "slateblue", alpha = 1/2) +
+  geom_point(shape = 20, size = 2, alpha = 2/3) +
+  scale_x_continuous(breaks = scales::breaks_width(width = 100)) +
+  scale_color_gradientn(colors = colr) +
+  theme_classic() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.05, 0.8)) +
+  labs(title = "Cherry Blossom in Japan",
+       subtitle = sprintf("%d observations", nrow(d)))
+```
+
+the code `knots[-c(1, nknots)]` is required because `bs` places knots at
+the boundaries by default, so we have to remove them.
+
+```{r}
+library(splines)
+B <- splines::bs(x = d2$year, knots = knots[-c(1, nknots)], degree = 3, intercept = TRUE)
+# str(B)
+```
+
+and we plot the basis functions
+
+
+```{r}
+# this data.frame will be reused below with the posteriors
+df_bias <- B %>%
+  as.data.frame() %>%
+  setNames(sprintf("B%02d", seq_len(ncol(.)))) %>%
+  mutate(year = d2$year) %>%
+  pivot_longer(cols = -year, names_to = "bias_func", values_to = "bias")
+str(df_bias)
+
+clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)))
+ggplot(df_bias, aes(x = year, y = bias, color = bias_func)) +
+  geom_line() +
+  scale_color_manual(values = clrs) +
+  ggthemes::theme_tufte() +
+  theme(legend.position = "none") +
+  labs("The bias functions")
+
+```
+
+#### Model and fit
+
+$$
+\begin{align*}
+doy_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\,u_i &= \alpha + \sum_{k=1}^Kw_kB_{k, i} \\
+\alpha &\sim \mathcal{N}(100, 10) \\
+w_j &\sim \mathcal{N}(0, 10) \\
+\sigma &\sim \mathcal{Exp}(1)
+\end{align*}
+$$
+
+We first create append the matrix to the data in one column. See @kurtz2020b
+on this data structure.
+
+```{r}
+d3 <- d2 %>%
+  mutate(B = B)
+# the last column is a matrix column, with same nb of rows as the other
+# columns but with a column including 17 subcolumns (!)
+# glimpse(d3)
+```
+
+and the fit
+
+```{r}
+a_file <- here::here("fits", "b04_08.rds")
+b4.8 <- readRDS(file = a_file)
+# b4.8 <- brm(data = d3,
+#       family = gaussian,
+#       doy ~ 1 + B,
+#       prior = c(prior(normal(100, 10), class = Intercept),
+#                 prior(normal(0, 10), class = b),
+#                 prior(exponential(1), class = sigma)),
+#       cores = detectCores(), seed = 4)
+# saveRDS(b4.8, file = a_file)
+```
+
+```{r}
+summary(b4.8)
+```
+#### Plot
+
+```{r}
+# get_variables(b4.8)
+```
+
+
+```{r}
+# Source: https://github.com/mjskay/tisdybayes/issues/38
+df <- tidybayes::gather_draws(b4.8, !!sym("^b_B.+"), regex = TRUE) %>%
+  mutate(.variable = as.integer(sub("^b_B", replacement = "", x = .variable)),
+         .variable = sprintf("B%02d", .variable)) %>%
+  rename("bias_func" = .variable) %>%
+  group_by(bias_func) %>%
+  summarise(weight = mean(.value)) %>%
+  full_join(y = df_bias, by = "bias_func")
+# glimpse(df)
+
+clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)))
+ggplot(df, aes(x = year, y = bias * weight, color = bias_func)) +
+  geom_line(size = 1) +
+  scale_color_manual(values = clrs) +
+  ggthemes::theme_tufte() +
+  theme(legend.position = "none") +
+  labs(title = "fitted bias functions")
+
+```
+
+
+
+```{r}
+df <- fitted(b4.8) %>%
+  as.data.frame() %>%
+  bind_cols(d2)
+str(df)
+clrs <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
+ggplot(df, aes(x = year, y = doy)) +
+  geom_point(aes(color = temp)) +
+  geom_lineribbon(aes(x = year, y = Estimate, ymin = Q2.5, ymax = Q97.5),
+                  color = "blueviolet", fill = "cornflowerblue", alpha = 1/2) +
+  scale_color_gradientn(colors = clrs) +
+  ggthemes::theme_tufte() +
+  theme(legend.position = "none") +
+  labs(title = "Figure 4.12")
+```
+
+
 
 ### Smooth functions for a smooth world
 

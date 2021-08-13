@@ -889,13 +889,13 @@ The model is
 
 $$
 \begin{align*}
-response_i &\sim \mathcal{Categorical}(\overrightarrow{p}) \\
+response_i &\sim \mathcal{Categorical}(\overrightarrow{\textbf{p}}) \\
 logit(p_k) &= \alpha_k - \phi_i \\
 \phi_i &= \beta_E \sum_{j=0}^{E_i-1} \delta_j + \beta_A \cdot action_i + \beta_I \cdot intention_i + \beta_C \cdot contact_i \\
 \alpha_k &\sim \mathcal{N}(0,1.5) \\
 \beta_A, \beta_I, \beta_C &\sim \mathcal{N}(0,1) \\
 \beta_E &\sim \mathcal{N}(0, 0.143) \\
-\overrightarrow{\delta} &\sim \mathcal{Dirichlet}([2,2,2,2,2,2,2])
+\overrightarrow{\mathbf{\delta}} &\sim \mathcal{Dirichlet}([2,2,2,2,2,2,2])
 \end{align*}
 $$
 
@@ -924,8 +924,6 @@ b12.6 <- readRDS(file = a_file)
 summary(b12.6)
 ```
 ```{r}
-library(GGally)
-
 delta_labels <- c("Elem", "MidSch", "SHS", "HSG", "SCol", "Bach", "Mast", "Grad")
 
 dp <- posterior_samples(b12.6) %>% 
