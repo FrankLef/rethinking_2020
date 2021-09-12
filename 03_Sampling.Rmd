@@ -9,7 +9,7 @@ library(ggdist, quietly = TRUE)
 library(paletteer, quietly = TRUE)
 ```
 
-# Sampling the Imaginary
+# Sampling the Imaginary {#sampling}
 
 ## Sampling from grid-approximation posterior
 

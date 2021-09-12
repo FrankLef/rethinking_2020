@@ -1,4 +1,4 @@
-# The Golem of Prague
+# The Golem of Prague {#golem}
 
 ## Using `rethinking`, `brms` and `loo`
 

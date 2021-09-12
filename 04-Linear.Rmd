@@ -6,6 +6,7 @@ library(tidyr, quietly = TRUE)
 # ggplot2 is loaded by tidybayes or ggdist
 library(tidybayes, quietly = TRUE)
 library(ggdist, quietly = TRUE)
+library(modelr, quietly = TRUE)
 library(patchwork, quietly = TRUE)
 library(paletteer, quietly = TRUE)
 ```
@@ -56,6 +57,7 @@ $$
 ```{r}
 data("Howell1")
 d <- Howell1
+rm(Howell1)
 ```
 
 which we can visualize using `skimr`
@@ -92,28 +94,20 @@ We do the prior predictive simulation with the prior
 $\mu \sim \mathcal{N}(178, 20)$
 
 ```{r}
-n_samples <- 1e4
-sample_mu <- rnorm(n = n_samples, mean = 178, sd = 20)
-sample_sigma <- runif(n= n_samples, min = 0, max = 50)
-prior_h <- rnorm(n = n_samples, mean = sample_mu, sd = sample_sigma)
-df_h1 <- data.frame(id = seq_len(n_samples),
-                 mu = sample_mu,
-                 sigma = sample_sigma,
-                 prior_h = prior_h)
+prior1 <- data.frame(id=seq_len(1e4)) %>%
+  mutate(mu=rnorm(n=nrow(.), mean=178, sd=20),
+         sigma=runif(n=nrow(.), min=0, max=50),
+         height = rnorm(n=nrow(.), mean=mu, sd=sigma))
 ```
 
 and we do the prior predictive simulation with the prior
 $\mu \sim \mathcal{N}(178, 100)$
 
 ```{r}
-n_samples <- 1e4
-sample_mu <- rnorm(n = n_samples, mean = 178, sd = 100)
-sample_sigma <- runif(n= n_samples, min = 0, max = 50)
-prior_h <- rnorm(n = n_samples, mean = sample_mu, sd = sample_sigma)
-df_h2 <- data.frame(id = seq_len(n_samples),
-                 mu = sample_mu,
-                 sigma = sample_sigma,
-                 prior_h = prior_h)
+prior2 <- data.frame(id=seq_len(1e4)) %>%
+  mutate(mu=rnorm(n=nrow(.), mean=178, sd=100),
+         sigma=runif(n=nrow(.), min=0, max=50),
+         height = rnorm(n=nrow(.), mean=mu, sd=sigma))
 ```
 
 
@@ -121,72 +115,77 @@ df_h2 <- data.frame(id = seq_len(n_samples),
 and we visualize using `ggplot`
 
 ```{r}
-p1 <- df_h1 %>%
-  ggplot(aes(x = prior_h)) +
-  geom_density(color = "slateblue1", size = 1) +
-  # stat_halfeye(point_interval = ggdist::mean_qi, .width = c(0.5, 0.8),
-  #              aes(fill = stat(cut_cdf_qi(cdf, .width = c(0.5, 0.8, 1))))) +
-  # scale_fill_paletteer_d("futurevisions::cancri", direction = -1,
-  #                        na.translate = FALSE) +
-  theme_ggdist() +
-  theme(legend.position = c(0.1, 0.8)) +
-  labs(
-    title = expression(paste("h ~ dnorm(", mu, ",", sigma ,")")),
-    subtitle = sprintf("sample size = %d", nrow(df)),
-    fill = "quantile"
+p <- list()
+# NOTE: we use {} with %>% to use nrow in  sprintf
+p$prior1 <- prior1 %>%
+  {
+    ggplot(data=., aes(x=height)) +
+      geom_density(color = "slateblue1", size = 1) +
+      theme_classic() +
+      theme(legend.position = c(0.1, 0.8)) +
+      labs(
+        title = expression(paste("h ~ dnorm(", mu, ",", sigma ,")")),
+        subtitle = sprintf("sample size = %d", nrow(.)),
+        fill = "quantile"
   )
+  }
+# p$prior1
 ```
 
 
 
 
 ```{r}
-p2 <- df_h2 %>%
-  ggplot(aes(x = prior_h)) +
-  geom_density(color = "peru", size = 1) +
-  geom_vline(xintercept = 0, linetype = "dotted", color = "navy") +
-  # stat_halfeye(point_interval = ggdist::mean_qi, .width = c(0.5, 0.8),
-  #              aes(fill = stat(cut_cdf_qi(cdf, .width = c(0.5, 0.8, 1))))) +
-  # scale_fill_paletteer_d("futurevisions::cancri", direction = -1,
-  #                        na.translate = FALSE) +
-  theme_ggdist() +
-  theme(legend.position = c(0.1, 0.8)) +
-  labs(
-    title = expression(paste("h ~ dnorm(", mu, ",", sigma ,")")),
-    subtitle = sprintf("sample size = %d", nrow(df)),
-    fill = "quantile"
-  )
+p$prior2 <- prior2 %>%
+  {
+    ggplot(data=., aes(x = height)) +
+      geom_density(color = "peru", size = 1) +
+      geom_vline(xintercept = 0, linetype = "dotted", color = "navy") +
+      theme_classic() +
+      theme(legend.position = c(0.1, 0.8)) +
+      labs(
+        title = expression(paste("h ~ dnorm(", mu, ",", sigma ,")")),
+        subtitle = sprintf("sample size = %d", nrow(.)),
+        fill = "quantile")
+  }
+# p$prior2
 ```
-
-
 
 and we generate the 4 plots using `ggdist::stat_dist_interval()` used for
 analytical distribution
 
 ```{r}
-mu_mean <- 178
-mu_sd <- 20
-p3 <- ggplot() +
-  geom_function(fun = dnorm, args = list(mean = 178, sd = 20),
-                color = "olivedrab4", size = 1) +
-  scale_x_continuous(limits = c(mu_mean - 3 * mu_sd, mu_mean + 3 * mu_sd),
+p$normal <- data.frame(mean=178, sd=20) %>%
+  {
+    ggplot(data=.) +
+      geom_function(fun=dnorm, args=list(mean=.$mean, sd=.$sd),
+                    color="olivedrab4", size=1) +
+      scale_x_continuous(limits = c(.$mean - 3 * .$sd, .$mean  + 3 * .$sd),
                      breaks = scales::breaks_width(width = 25)) +
-  theme_ggdist() +
-  labs(title = expression(paste(mu, "~ dnorm(178, 20)")), x = expression(mu))
-sigma_min <- 0
-sigma_max <- 50
-p4 <- ggplot() +
-  geom_function(fun = dunif, args = list(min = sigma_min, max = sigma_max),
-                color = "rosybrown2", size = 1) +
-  scale_x_continuous(limits = c(sigma_min - 2 , sigma_max + 2),
-                     breaks = scales::breaks_width(width = 10)) +
-  theme_ggdist() +
-  labs(title = expression(paste(sigma, "~ dunif(0, 50)")), x = expression(sigma))
+  theme_classic() +
+  labs(title = bquote(mu ~ .(sprintf("~ dnorm(%.0f, %.0f)", .$mean, .$sd))), 
+       x = expression(mu), y = "density") 
+  }
+# p$normal
+
+
+p$uniform <- data.frame(min=0, max=50) %>%
+  {
+    ggplot(data=.) +
+      geom_function(fun=dunif, args=list(min=.$min, max=.$max),
+                    color="rosybrown2", size=1) +
+      scale_x_continuous(limits = c(.$min - 2, .$max  + 2),
+                         breaks = scales::breaks_width(width=10)) +
+      theme_classic() +
+      labs(title = bquote(mu ~ .(sprintf("~ dunif(%.0f, %.0f)", .$min, .$max))), 
+           x = expression(sigma), y = "density")
+  }
+# p$uniform
 ```
 
 
 ```{r}
-patchwork::wrap_plots(p3, p4, p1, p2)
+patchwork::wrap_plots(p)
 ```
 
 
@@ -199,11 +198,13 @@ the actual posteriors which will be calculated next using a sampling.
 
 ```{r}
 # create grid of mu and sigma
-n_grid <- 200  # the grid size
-the_mus <- seq(from = 140, to = 160, length.out = n_grid)  # grid of mu
-the_sigmas <- seq(from = 4, to = 9, length.out = n_grid)  # grid of sigma
-the_grid <- tidyr::crossing(mu = the_mus, sigma = the_sigmas)
-stopifnot(nrow(the_grid) == length(the_mus) * length(the_sigmas))
+post <- list(n = 200L)
+post$grid <-with(post, {
+  data.frame(
+  mu = seq(from = 140, to = 160, length.out = n),
+  sigma = seq(from = 4, to = 9, length.out = n)) %>%
+  expand(mu, sigma)
+})
 ```
 
 Then we calculate the likelihood. Since probabilities are percentage this
@@ -242,12 +243,12 @@ as follows
 
 ```{r}
 # The likelihood on the log scale
-the_grid$LL <- sapply(seq_len(nrow(the_grid)), function(i) sum(
-    dnorm(d2$height, 
-          mean = the_grid$mu[i],
-          sd = the_grid$sigma[i],
-          log = TRUE))
-    )
+post$grid <- post$grid %>%
+  mutate(LL=sapply(seq_len(nrow(.)), 
+                   function(i) sum(dnorm(d2$height, 
+                                         mean=post$grid$mu[i], 
+                                         sd=post$grid$sigma[i], 
+                                         log=TRUE))))
 ```
 
 then the remaining 2 elements of the summation are the priors
@@ -265,9 +266,11 @@ log scale
 ```{r}
 # add the the priors to the likelihood  on the log scales to obtain the
 # log of the posterior
-the_grid$post <- the_grid$LL + 
-    dnorm(x = the_grid$mu, mean = 178, sd = 20, log = TRUE) +
-    dunif(x = the_grid$sigma, min = 0, max = 50, log = TRUE)
+post$grid <- post$grid %>%
+  mutate(prob =
+           LL + 
+           dnorm(x=mu, mean=178, sd=20, log=TRUE) +
+           dunif(x=sigma, min=0, max=50, log=TRUE))
 ```
 
 and to convert the posterior back to the natural scale we exponentiate.  
@@ -287,15 +290,16 @@ $$
 
 ```{r}
 # convert back to real scale
-# attention: see endnote 73 on using max(the_grid$post)
-the_grid$post <- exp(the_grid$post - max(the_grid$post))
+# attention: see endnote 73 on using max(prob)
+post$grid$prob <- with(post$grid, {exp(prob - max(prob))})
 ```
 
 
 plot the results on a heatmap
 
 ```{r}
-ggplot(data = the_grid, aes(x = mu, y = sigma, fill = post)) +
+p <- list()
+p$heat <- ggplot(data = post$grid, aes(x = mu, y = sigma, fill = prob)) +
   geom_raster() +
   scale_x_continuous(limits = c(153, 156)) +
   scale_y_continuous(limits = c(6.5, 9)) +
@@ -303,55 +307,55 @@ ggplot(data = the_grid, aes(x = mu, y = sigma, fill = post)) +
   coord_fixed() +
   theme_minimal() +
   theme(panel.grid = element_blank()) +
-  labs(title = "The grid's posterior prob.")
+  labs(title = "The grid's posterior prob.",
+       x=expression(mu), y=expression(sigma))
+p$heat
 ```
 
 ### Sampling from the grid's posterior
 
 ```{r}
-n_samples <- 1e4
-df <- the_grid %>%
-  slice_sample(n = n_samples, weight_by = post, replace = TRUE)
-glimpse(df)
+post$samples <- post$grid %>%
+  slice_sample(n=1e4, weight_by = prob, replace = TRUE)
 ```
 
 and visualizing the density of $\mu$ and $\sigma$
 
 ```{r}
 # plot the density of mu
-p_mu <- ggplot(data = df, mapping = aes(x = mu)) +
+p$mu <- ggplot(data = post$samples, mapping = aes(x = mu)) +
   geom_density(color = "blue", size = 1, fill = "lightblue") +
   theme_minimal() +
   labs(title = expression("distribution of" ~ mu), x = expression(mu))
-
+p$mu
 ```
 
 
 ```{r}
 # plot the density of sigma
-p_sigma <- ggplot(data = df, mapping = aes(x = sigma)) +
+p$sigma <- ggplot(data = post$samples, mapping = aes(x = sigma)) +
   geom_density(color = "darkgreen", size = 1, fill = "lightgreen") +
   theme_minimal() +
   labs(title = expression("distribution of" ~ sigma), x = expression(sigma))
 ```
 
 ```{r}
-p_mu + p_sigma
+p$mu + p$sigma
 ```
 
 or, even, mapping them together using `ggExtra`
 
 ```{r}
-p <- ggplot(data = df, mapping = aes(x = mu, y = sigma)) +
+p$marg <- ggplot(data = post$samples, mapping = aes(x = mu, y = sigma)) +
   geom_point(color = "mediumorchid", size = 0.8) +
   geom_jitter(color = "mediumorchid", size = 0.8) +
   theme_minimal() +
   labs(title = expression("distribution of" ~ mu ~ sigma),
        x = expression(mu), y = expression(sigma))
-p <- ggExtra::ggMarginal(p, 
+p$marg <- ggExtra::ggMarginal(p$marg, 
                     xparams = list(colour = "blue", fill = "lightblue", size = 1),
                     yparams = list(colour="darkgreen", fill = "lightgreen", size = 1))
-p
+p$marg
 ```
 
 
@@ -386,17 +390,20 @@ and the fit is
 
 ```{r}
 # see Overthinking in section 4.3.5 for the difference between alist() and list()
-flist <- alist(
+m4.1_args <-list(
+ flist = alist(
     height ~ dnorm(mu, sigma),
     mu ~ dnorm(178, 28),
-    sigma ~ dunif(0, 50)
-    )
-# create the start values
-start <- list(
+    sigma ~ dunif(0, 50)),
+ start = list(
     mu  = mean(d2$height),
     sigma = sd(d2$height)
-)
-m4.1 <- rethinking::quap(flist, data = d2, start = start)
+    ))
+
+a_file <- here::here("fits", "m04_01.rds")
+# m4.1 <- readRDS(file = a_file)
+m4.1 <- rethinking::quap(m4.1_args$flist, data = d2, start = m4.1_args$start)
+saveRDS(m4.1, file = a_file)
 ```
 
 which gives us the summary
@@ -442,9 +449,7 @@ This process takes less than a second. It has been save to the rsd file
 `b04_01.rds`
 
 ```{r}
-a_file <- here::here("fits", "b04_01.rds")  # rds file location
-stopifnot(file.exists(a_file))
-# load fit from file saved before
+a_file <- here::here("fits", "b04_01.rds")
 b4.1 <- readRDS(file = a_file)
 # fit model and save to file
 # b4.1 <-
@@ -491,12 +496,15 @@ and we can visualize with `ggdist`.  it could be done with `tidybayes` but since
 `tidybayes` only export `ggsidt` we use it directly.
 
 ```{r}
-qtl <- c(0.89, 1)
-b4.1_plot_b <- b4.1 %>%
+p <- list()
+# quantiles used in the plots
+p$qtl <- c(0.89, 1)
+# plot the posterior dist for b
+p$b <- b4.1 %>%
   tidybayes::spread_draws(b_Intercept, sigma) %>%
   ggplot(aes(x = b_Intercept)) +
-  stat_halfeye(aes(fill=stat(cut_cdf_qi(cdf,.width = qtl))),
-           point_interval = mean_qi, .width = qtl) +
+  stat_halfeye(aes(fill=stat(cut_cdf_qi(cdf,.width = p$qtl))),
+           point_interval = mean_qi, .width = p$qtl) +
    scale_fill_paletteer_d(palette = "futurevisions::pso", direction = -1,
                          na.translate = FALSE) +
   theme_ggdist() +
@@ -504,11 +512,13 @@ b4.1_plot_b <- b4.1 %>%
         plot.background = element_rect(fill = "palegoldenrod"),
         panel.background = element_rect(fill = "lightblue")) +
   labs(title = "Posterior probability of Intercept", y = "density")
-b4.1_plot_sigma <- b4.1 %>%
+
+# plot the posterior dist for sigma
+p$sigma <- b4.1 %>%
   tidybayes::spread_draws(b_Intercept, sigma) %>%
   ggplot(aes(x = sigma)) +
-  stat_halfeye(aes(fill=stat(cut_cdf_qi(cdf, .width = qtl))),
-           point_interval = mean_qi, .width = qtl) +
+  stat_halfeye(aes(fill=stat(cut_cdf_qi(cdf, .width = p$qtl))),
+           point_interval = mean_qi, .width = p$qtl) +
    scale_fill_paletteer_d(palette = "futurevisions::pso",
                          na.translate = FALSE) +
   theme_ggdist() +
@@ -516,7 +526,11 @@ b4.1_plot_sigma <- b4.1 %>%
         plot.background = element_rect(fill = "lightblue"),
         panel.background = element_rect(fill = "palegoldenrod")) +
   labs(title = expression("Posterior probability of " ~ sigma), y = "density")
-b4.1_plot_b + b4.1_plot_sigma
+p$sigma
+
+p$b + p$sigma +
+  plot_annotation(title = "Model 4.1",
+                  theme = theme(title = element_text(color = "midnightblue")))
 ```
 
 
@@ -543,14 +557,14 @@ cov2cor(vcov(m4.1))
 so to simulate using `rethinking` we simply use
 
 ```{r}
-post_samples <- extract.samples(m4.1, n = 1e4)
+post <- extract.samples(m4.1, n = 1e4)
 ```
 
 which gives us a sample of size 10000 of the posterior distribution which
 can be summarized with the usual `precis()`
 
 ```{r}
-precis(post_samples)
+precis(post)
 ```
 
 #### Using `brm`
@@ -567,10 +581,10 @@ So you have to calculate the var-cov matrix by using a sample from the
 posterior distribution
 
 ```{r}
-post_samples <- posterior_samples(b4.1)
-glimpse(post_samples, 5)
+post <- posterior_samples(b4.1)
+glimpse(post, 5)
 # compute the cov
-cor(post_samples[, c("b_Intercept", "sigma")])
+cor(post[, c("b_Intercept", "sigma")])
 ```
  
  > See comment from @kurtz2020b at end of section 4.3.6 to explain that McElreath
@@ -620,21 +634,24 @@ The goal is to **simulate the heights from the model, using only the prior**.
 
 
 ```{r}
+prior <- list()
+prior$n <- 100L
 set.seed(4)
-n_sim <- 100
-the_sim <- tibble(
-  id = seq_len(n_sim),
-  a = rnorm(n = n_sim, mean = 178, sd = 20),
-  b = rnorm(n = n_sim, mean = 0, sd = 10)) %>%
-  expand(nesting(id, a, b), weight = range(d2$weight)) %>%
-  mutate(height = a + b * (weight - mean(d2$weight)))
-# glimpse(the_sim)
+prior$sim <- with(prior, {
+  data.frame(
+    id = seq_len(n),
+    a = rnorm(n = n, mean = 178, sd = 20),
+    b = rnorm(n = n, mean = 0, sd = 10)) %>%
+    expand(nesting(id, a, b), weight = range(d2$weight)) %>%
+    mutate(height = a + b * (weight - mean(d2$weight)))
+})
+glimpse(prior$sim)
 ```
 
 and we plot if
 
 ```{r}
-ggplot(the_sim, aes(x = weight, y = height, group = id)) +
+ggplot(prior$sim, aes(x = weight, y = height, group = id)) +
   geom_line(alpha = 1/10) +
   geom_hline(yintercept = c(0, 272), linetype = c(2, 1), size = 1/3) +
   coord_cartesian(ylim = c(-100, 400)) +
@@ -655,21 +672,22 @@ the exponential distribution for $\sigma$ in this work.
 
 
 ```{r}
-p1 <- ggplot(data.frame(x = c(0, 5)), aes(x)) +
+p <- list()
+p$lnorm <- ggplot(data.frame(x = c(0, 5)), aes(x)) +
   stat_function(geom = "line", fun = dlnorm, args = list(meanlog = 0, sdlog = 1), 
                 color = "slategray", size = 1.5) +
   stat_function(geom = "area", fun = dlnorm, args = list(meanlog = 0, sdlog = 1), 
                 fill = "slategray1") +
   theme_classic() +
   labs(title = "log-normal distribution", x = expression(beta), y = "density")
-p2 <- ggplot(data.frame(x = c(0, 5)), aes(x)) +
+p$exp <- ggplot(data.frame(x = c(0, 5)), aes(x)) +
   stat_function(geom = "line", fun = dexp, args = list(rate = 1), 
                 color = "seagreen", size = 1.5) +
   stat_function(geom = "area", fun = dexp, args = list(rate = 1), 
                 fill = "seagreen1") +
   theme_classic() +
   labs(title = "exponential distribution", x = expression(beta), y = "density")
-p1 + p2
+wrap_plots(p)
 ```
 
 
@@ -710,27 +728,38 @@ d <- Howell1
 d2 <- d %>%
   filter(age >= 18) %>%
   mutate(weight_c = scale(weight, center = TRUE, scale = FALSE))
+rm(Howell1)
 ```
 
 
 then get the fit using `rethinking::quap`
 
 > Giving start values to `quap` seem to help it significantly
-and avoiding error, at elast when using b ~ dlnorm(0, 1).
+and avoiding error, at least when using b ~ dlnorm(0, 1).
 
 ```{r}
-a_file <- here::here("fits", "m4.3.rds")  # rds file location
+m4.3_args <-list(
+ flist = alist(
+    height ~ dnorm(mu, sigma),
+    mu <- a + b * weight_c,
+    a ~ dnorm(178, 20),
+    b ~ dlnorm(0, 1),
+    sigma ~ dunif(0, 50)),
+ start = list(
+    a  = mean(d2$height),
+    sigma = sd(d2$height)
+    ))
+```
+
+
+```{r}
+a_file <- here::here("fits", "m04_03.rds")  # rds file location
 # fit the model with quadratic approximation
 m4.3 <- readRDS(file = a_file)
 # m4.3 <- quap(
-#   alist(
-#    height ~ dnorm(mu, sigma),
-#    mu <- a + b * weight_c,
-#    a ~ dnorm(178, 20),
-#    b ~ dlnorm(0, 1),
-#    sigma ~ dexp(1) 
-#   ),
-#   data = d2
+#   flist=m4.3_args$flist,
+#   data = d2,
+#   start=m4.3_args$start
 # )
 # saveRDS(m4.3, file = a_file)
 precis(m4.3)
@@ -745,7 +774,7 @@ uses the log-normal distribution of $\beta$, the other one uses the log transfor
 of $\beta$ with the normal distribution.  The two models are mathematically
 equivalent
 
-#### using lognormal distribution
+#### Using lognormal distribution
 
 
 $$
@@ -883,77 +912,77 @@ tidybayes::get_variables(b4.3)
 
 
 ```{r}
-b4.3_postlong <- b4.3 %>%
+post <- list()
+post$long <- b4.3 %>%
   tidybayes::gather_draws(b_Intercept, b_weight_c, sigma)
-# glimpse(b4.3_post)
 ```
 
 with the histogram
 
 ```{r}
-b4.3_post_hist <- ggplot(b4.3_postlong, aes(x = .value)) +
+p <- list()
+p$hist <- ggplot(post$long, aes(x = .value)) +
   geom_histogram(aes(fill = .variable)) +
   scale_fill_paletteer_d(palette = "futurevisions::atomic_orange") +
   theme_minimal() +
   theme(legend.position = "none") +
   facet_wrap(. ~ .variable, ncol = 1, scales = "free")
-b4.3_post_hist
+p$hist
 ```
 
 and density plots by chains
 
 ```{r}
-b4.3_post_dens <- ggplot(b4.3_postlong, aes(x = .value, color = as.factor(.chain))) +
+p$dens <- ggplot(post$long, aes(x = .value, color = as.factor(.chain))) +
   geom_density() +
   scale_color_paletteer_d(palette = "futurevisions::atomic_clock") +
   theme_minimal() +
   # theme(legend.position = "none") +
   labs(x = NULL, color = "chain") +
   facet_wrap(. ~ .variable, ncol = 1, scales = "free")
-b4.3_post_dens
+p$dens
 ```
 and the paired plots with `ggally`
 
 ```{r}
-b4.3_postwide <- b4.3 %>%
+post$wide <- b4.3 %>%
   tidybayes::spread_draws(b_Intercept, b_weight_c, sigma)
-glimpse(b4.3_postwide)
+glimpse(post$wide)
 ```
 
 
 ```{r}
-b4.3_pairs <- GGally::ggscatmat(b4.3_postwide, 
+p$pairs <- GGally::ggscatmat(post$wide, 
                                 columns = c("b_Intercept", "b_weight_c", "sigma"),
                                 color = ".chain", alpha = 0.8) +
   scale_color_paletteer_d(palette = "futurevisions::atomic_clock") +
   theme_minimal()
-b4.3_pairs
+p$pairs
 ```
 and the correlation matrix
 
 ```{r}
-b4.3_corr <- GGally::ggcorr(b4.3_postwide[, c("b_Intercept", "b_weight_c", "sigma")],
+p$corr <- GGally::ggcorr(post$wide[, c("b_Intercept", "b_weight_c", "sigma")],
                             color = "darkgreen",
                             nbreaks = 10, label = TRUE, label_round = 2,
                             label_color = "midnightblue") +
   scale_fill_paletteer_d(palette = "futurevisions::venus") +
   theme(legend.position = "none") +
   labs(title = "Correlations between parameters")
-b4.3_corr
+p$corr
 ```
 
-and for added extra, the trac plot
+and for added extra, the trace plot
 
 ```{r}
-glimpse(b4.3_postlong)
-b4.3_trace <- ggplot(b4.3_postlong, aes(x = .iteration, y = .value, color = as.factor(.chain))) +
+p$trace <- ggplot(post$long, aes(x = .iteration, y = .value, color = as.factor(.chain))) +
   geom_line() +
   scale_color_paletteer_d(palette = "futurevisions::atomic_clock", direction = 1) +
   theme_minimal() +
   theme(legend.position = "none") +
   labs(x = NULL, y = NULL) +
   facet_wrap(. ~ .variable, ncol = 1, scales = "free")
-b4.3_trace
+p$trace
 ```
 
 
@@ -968,25 +997,31 @@ data("Howell1")
 d <- Howell1 %>%
   mutate(weight_s = as.vector(scale(weight)),
          weight_s2 = weight_s ^ 2)
-# glimpse(d)
-str(d)
-# a function to revert back to natural scale
+rm(Howell1)
+# a function to inverse transform the data to natural scale
 # will be used in plots below
 fnc_nat <- function(x, m = mean(d$weight), s = sd(d$weight)) {
-  x * s + m
+  round(x * s + m, 0)
 }
 ```
 
 ```{r}
+p <- list()
+
+# add geom after because in later plot we need to keep geom_point() again
+# to keep it on top
 colr <- unclass(paletteer::paletteer_d("futurevisions::titan"))
-ggplot(d, aes(x = weight, y = height, color = age)) +
-  geom_point(shape = 20, size = 2, alpha = 2/3) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 5)) +
+p$basic <- ggplot(d, aes(x = weight_s, y = height, color = age)) +
+  scale_x_continuous(breaks = scales::breaks_extended(n=7),
+                     labels = function(x) fnc_nat(x)) +
   scale_color_gradientn(colors = colr) +
   theme_classic() +
   theme(title = element_text(color = "midnightblue"),
         legend.position = c(0.1, 0.8)) +
   labs(title = "Census data for the Dobe area !Kung San")
+
+p$basic +
+  geom_point(shape = 20, size = 2, alpha = 2/3)
 ```
 
 and the model used is
@@ -1036,7 +1071,7 @@ tidybayes::get_variables(b4.5)
 
 
 ```{r}
-b4.5_dens <- 
+p$dens <- 
   b4.5 %>% tidybayes::gather_draws(b_Intercept, b_weight_s, b_weight_s, sigma) %>%
   ggplot(aes(x = .value, color = as.factor(.chain))) +
   geom_density() +
@@ -1045,12 +1080,12 @@ b4.5_dens <-
   theme(legend.position = "none") +
   labs(x = NULL, color = "chain") +
   facet_wrap(. ~ .variable, ncol = 1, scales = "free")
-# b4.5_dens
+# p$dens
 ```
 and
 
 ```{r}
-b4.5_trace <- 
+p$trace <- 
   b4.5 %>% tidybayes::gather_draws(b_Intercept, b_weight_s, b_weight_s, sigma) %>%
   ggplot(aes(x = .iteration, y = .value, color = as.factor(.chain))) +
   geom_line() +
@@ -1063,7 +1098,7 @@ b4.5_trace <-
 ```
 
 ```{r}
-b4.5_dens + b4.5_trace
+p$dens + p$trace
 ```
 
 
@@ -1093,22 +1128,25 @@ as for `predict` since they both report the same `\mu_i`, but `predict` has a wi
 interval since it uses $\sigma$
 
 ```{r}
-weight_seq <- 
-  tibble(weight_s = seq(from = -2.5, to = 2.5, length.out = 30)) %>% 
-  mutate(weight_s2 = weight_s^2)
+samples <- list()
+# the new data to use for sampling fitted and pedict
+samples$newdata <- data.frame(
+  weight_s=seq_range(d$weight_s, n=30L)) %>%
+  mutate(weight_s2=weight_s^2)
 
-b4.5_fitted <-
-  fitted(b4.5, newdata = weight_seq) %>%
+samples$fitted <- with(samples, {
+  fitted(b4.5, newdata = newdata) %>%
   data.frame() %>%
-  bind_cols(weight_seq)
-# glimpse(b4.5_fitted)
+  bind_cols(newdata)
+})
+# glimpse(samples$fitted)
 
-b4.5_predict <-
-  predict(b4.5, 
-          newdata = weight_seq) %>%
+samples$predict <- with(samples, {
+  predict(b4.5, newdata = newdata) %>%
   data.frame() %>%
-  bind_cols(weight_seq)  
-# glimpse(b4.5_predict)
+  bind_cols(newdata)
+})
+# glimpse(samples$predict)
 ```
 
 and we can now create the plot.
@@ -1124,89 +1162,66 @@ glimpse(d)
 
 
 ```{r}
-colr <- unclass(paletteer::paletteer_d("futurevisions::titan"))
-p <-
-  ggplot(data = d, aes(x = weight_s)) +
-  geom_ribbon(data = b4.5_predict,
-              aes(ymin = Q2.5, ymax = Q97.5),
-              fill = "lightcyan") +
-  geom_smooth(data = b4.5_fitted,
-              aes(y = Estimate, ymin = Q2.5, ymax = Q97.5),
+p$model <- p$basic +
+  # scale_x_continuous(labels = function(x) fnc_nat(x)) +
+  geom_ribbon(data = samples$predict,
+              aes(x = weight_s, ymin = Q2.5, ymax = Q97.5), inherit.aes = FALSE,
+              fill = "lightcyan", alpha = 1) +
+  geom_smooth(data = samples$fitted,
+              aes(x=weight_s, y = Estimate, ymin = Q2.5, ymax = Q97.5), inherit.aes = FALSE,
               stat = "identity",
-              fill = "lightcyan3", color = "black", alpha = 1, size = 1/2) +
-  geom_point(aes(y = height, color = age), shape = 20, size = 2, alpha = 2/3) +
-  scale_x_continuous(
-      breaks = scales::breaks_extended(n = 7),
-      labels = scales::trans_format(
-        trans = function(x) fnc_nat(x),  ## see fnc_nat above
-        format = scales::label_number(scale = 1))) +
-  scale_color_gradientn(colors = colr) +
-  coord_cartesian(xlim = range(d$weight_s), ylim = range(d$height)) +
-  theme_minimal() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.1, 0.8)) +
-  labs(title = "Quadratic fit", x = "weight", y = "height")
-
-p
+              fill = "lightcyan3", color = "royalblue", alpha = 1, size = 1/2) +
+  geom_point(shape = 20, size = 2, alpha = 2/3)
+p$model
 ```
 
 
 ### Splines
 
 
-
 ```{r}
 data("cherry_blossoms")
 d <- cherry_blossoms
+rm(cherry_blossoms)
 d %>% skimr::skim()
 # data without NA
 d2 <- d %>%
-  drop_na()
+  drop_na(doy)
 ```
 
-```{r}
-colr <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
-ggplot(d2, aes(x = year, y = doy, color = temp)) +
-  geom_point(shape = 20, size = 2, alpha = 2/3) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 100)) +
-  scale_color_gradientn(colors = colr) +
-  theme_classic() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.05, 0.8)) +
-  labs(title = "Cherry Blossom in Japan",
-       subtitle = sprintf("%d observations", nrow(d)))
-```
+#### Knots, degree and basis functions
 
-#### Knots, degree and basis funcitons
-
-The knots used here are based on quantiles, othe ways are possible,
+The knots used here are based on quantiles, other ways are possible,
 
 ```{r}
-nknots <- 15
-knots <- quantile(d$year, probs = seq(from = 0, to = 1, length.out = nknots))
+knots <- quantile(d2$year, probs = seq(from = 0, to = 1, length.out = 15))
 knots
 ```
+
+
 
 ```{r}
 colr <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
 ggplot(d2, aes(x = year, y = doy, color = temp)) +
   geom_vline(xintercept = knots, color = "slateblue", alpha = 1/2) +
   geom_point(shape = 20, size = 2, alpha = 2/3) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 100)) +
+  scale_x_continuous(breaks = knots, labels = knots) +
   scale_color_gradientn(colors = colr) +
   theme_classic() +
   theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.05, 0.8)) +
+        legend.position = c(0.05, 0.8),
+        axis.text.x = element_text(size = rel(0.9))) +
   labs(title = "Cherry Blossom in Japan",
-       subtitle = sprintf("%d observations", nrow(d)))
+       subtitle = sprintf("%d observations with %d knots", nrow(d), length(knots)))
 ```
+
 
 the code `knots[-c(1, nknots)]` is required because `bs` places knots at
 the boundaries by default, so we have to remove them.
 
 ```{r}
 library(splines)
-B <- splines::bs(x = d2$year, knots = knots[-c(1, nknots)], degree = 3, intercept = TRUE)
+B <- splines::bs(x = d2$year, knots = knots[-c(1, length(knots))], degree = 3, intercept = TRUE)
 # str(B)
 ```
 
@@ -1224,6 +1239,7 @@ str(df_bias)
 
 clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)))
 ggplot(df_bias, aes(x = year, y = bias, color = bias_func)) +
+  geom_vline(xintercept = knots, color = "grey60", linestyle = "longdash", alpha = 1/2) +
   geom_line() +
   scale_color_manual(values = clrs) +
   ggthemes::theme_tufte() +
@@ -1293,12 +1309,12 @@ df <- tidybayes::gather_draws(b4.8, !!sym("^b_B.+"), regex = TRUE) %>%
 
 clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)))
 ggplot(df, aes(x = year, y = bias * weight, color = bias_func)) +
+  geom_vline(xintercept = knots, color = "grey60", linestyle = "longdash", alpha = 1/2) +
   geom_line(size = 1) +
   scale_color_manual(values = clrs) +
   ggthemes::theme_tufte() +
   theme(legend.position = "none") +
   labs(title = "fitted bias functions")
-
 ```
 
 
@@ -1307,9 +1323,9 @@ ggplot(df, aes(x = year, y = bias * weight, color = bias_func)) +
 df <- fitted(b4.8) %>%
   as.data.frame() %>%
   bind_cols(d2)
-str(df)
 clrs <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
 ggplot(df, aes(x = year, y = doy)) +
+  geom_vline(xintercept = knots[-c(1, length(knots))], color = "slateblue", alpha = 1/2) +
   geom_point(aes(color = temp)) +
   geom_lineribbon(aes(x = year, y = Estimate, ymin = Q2.5, ymax = Q97.5),
                   color = "blueviolet", fill = "cornflowerblue", alpha = 1/2) +
@@ -1328,6 +1344,6 @@ See @kurtz2020b for much more details on this topic.
 
 ## Summary
 
-this was an important chapter.  Most of the plots and basic coding tools
+This was an important chapter.  Most of the plots and basic coding tools
 are exemplified here.  It is an important reference chapter. 
 The `brms` package will be exclusively used from now on.
