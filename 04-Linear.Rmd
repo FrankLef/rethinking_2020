@@ -1205,7 +1205,7 @@ colr <- unclass(paletteer::paletteer_d("futurevisions::cancri"))
 ggplot(d2, aes(x = year, y = doy, color = temp)) +
   geom_vline(xintercept = knots, color = "slateblue", alpha = 1/2) +
   geom_point(shape = 20, size = 2, alpha = 2/3) +
-  scale_x_continuous(breaks = knots, labels = knots) +
+  scale_x_continuous(breaks = knots, labels = scales::label_number(big.mark = "")) +
   scale_color_gradientn(colors = colr) +
   theme_classic() +
   theme(title = element_text(color = "midnightblue"),
@@ -1235,12 +1235,13 @@ df_bias <- B %>%
   setNames(sprintf("B%02d", seq_len(ncol(.)))) %>%
   mutate(year = d2$year) %>%
   pivot_longer(cols = -year, names_to = "bias_func", values_to = "bias")
-str(df_bias)
+# str(df_bias)
 
 clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)))
 ggplot(df_bias, aes(x = year, y = bias, color = bias_func)) +
   geom_vline(xintercept = knots, color = "grey60", linestyle = "longdash", alpha = 1/2) +
   geom_line() +
+  scale_x_continuous(breaks = knots, labels = scales::label_number(big.mark = "")) +
   scale_color_manual(values = clrs) +
   ggthemes::theme_tufte() +
   theme(legend.position = "none") +
@@ -1311,6 +1312,7 @@ clrs <- paletteer::paletteer_c("pals::jet", n = length(unique(df_bias$bias_func)
 ggplot(df, aes(x = year, y = bias * weight, color = bias_func)) +
   geom_vline(xintercept = knots, color = "grey60", linestyle = "longdash", alpha = 1/2) +
   geom_line(size = 1) +
+  scale_x_continuous(breaks = knots, labels = scales::label_number(big.mark = "")) +
   scale_color_manual(values = clrs) +
   ggthemes::theme_tufte() +
   theme(legend.position = "none") +
@@ -1329,6 +1331,7 @@ ggplot(df, aes(x = year, y = doy)) +
   geom_point(aes(color = temp)) +
   geom_lineribbon(aes(x = year, y = Estimate, ymin = Q2.5, ymax = Q97.5),
                   color = "blueviolet", fill = "cornflowerblue", alpha = 1/2) +
+  scale_x_continuous(breaks = knots, labels = scales::label_number(big.mark = "")) +
   scale_color_gradientn(colors = clrs) +
   ggthemes::theme_tufte() +
   theme(legend.position = "none") +
