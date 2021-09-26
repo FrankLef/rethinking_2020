@@ -3,7 +3,7 @@ library(rethinking)
 library(brms)
 library(dplyr, quietly = TRUE)
 library(tidyr, quietly = TRUE)
-# ggplot2 is loaded by tidybayes or ggdist
+library(scales, quietly = TRUE)
 library(tidybayes, quietly = TRUE)
 library(ggdist, quietly = TRUE)
 library(modelr, quietly = TRUE)
@@ -947,7 +947,7 @@ and the paired plots with `ggally`
 ```{r}
 post$wide <- b4.3 %>%
   tidybayes::spread_draws(b_Intercept, b_weight_c, sigma)
-glimpse(post$wide)
+# glimpse(post$wide)
 ```
 
 
@@ -995,13 +995,21 @@ p$trace
 ```{r}
 data("Howell1")
 d <- Howell1 %>%
-  mutate(weight_s = as.vector(scale(weight)),
+  mutate(weight_s = scale(as.vector(weight)),
          weight_s2 = weight_s ^ 2)
 rm(Howell1)
-# a function to inverse transform the data to natural scale
-# will be used in plots below
-fnc_nat <- function(x, m = mean(d$weight), s = sd(d$weight)) {
-  round(x * s + m, 0)
+# str(d)
+
+# A function to inverse transform the data to natural scale
+# will be used in plots below. Normally used with `base::scale()`.
+# If the base::scale function was used originally, the attributes contain 
+# the center and scale values.
+inv.scale <- function(x, 
+                      center = attr(x, which = "scaled:center"),
+                      scale = attr(x, which = "scaled:scale")) {
+  if(!is.finite(center)) center <- 0L
+  if(!is.finite(scale)) scale <- 1L
+  center + x * scale
 }
 ```
 
@@ -1011,14 +1019,21 @@ p <- list()
 # add geom after because in later plot we need to keep geom_point() again
 # to keep it on top
 colr <- unclass(paletteer::paletteer_d("futurevisions::titan"))
-p$basic <- ggplot(d, aes(x = weight_s, y = height, color = age)) +
+# nice trick: we use the pipe with {} to be able to reuse the data within the plot
+p$basic <- d %>% {
+  ggplot(d, aes(x = weight_s, y = height, color = age)) +
   scale_x_continuous(breaks = scales::breaks_extended(n=7),
-                     labels = function(x) fnc_nat(x)) +
+                     labels = function(x) {
+                       x <- inv.scale(x, mean(.$weight), sd(.$weight))
+                       label_number(accuracy = 1)(x)
+                     }) +
   scale_color_gradientn(colors = colr) +
   theme_classic() +
   theme(title = element_text(color = "midnightblue"),
         legend.position = c(0.1, 0.8)) +
-  labs(title = "Census data for the Dobe area !Kung San")
+  labs(title = "Census data for the Dobe area !Kung San",
+       subtitle = sprintf("%d individuals", nrow(.)))
+}
 
 p$basic +
   geom_point(shape = 20, size = 2, alpha = 2/3)
@@ -1150,15 +1165,6 @@ samples$predict <- with(samples, {
 ```
 
 and we can now create the plot.
-
-> Both McElreath and Kuhn use different tricks to put the x-axis on
-natural scale.  I believe the `tidyverse` way that is the most robust
-is the one using the `scales` package from Hadley Wickham.  Kuhn never use
-this package which is almost a standard in the tidyverse.
-
-```{r}
-glimpse(d)
-```
 
 
 ```{r}

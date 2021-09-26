@@ -4,6 +4,8 @@ library(tidyr, quietly = TRUE)
 library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
+library(scales)
+library(modelr)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -32,7 +34,43 @@ d <- d %>%
          M = round(scale(Marriage), 4),
          D = round(scale(Divorce), 4))
 skimr::skim(d)
+str(d)
 ```
+
+
+and plot the data
+
+
+```{r}
+plot_waffles <- function(data, x_var = "WaffleHouses", y_var = "Divorce",
+                         color_var = "South",
+                         the_labs = labs(title = "Waffle Houses",
+                                     x = "Waffle Houses per million",
+                                     y = "Divorce rate",
+                                     color = "South")) {
+  ggplot(data, aes(x = .data[[x_var]], y = .data[[y_var]])) +
+    geom_point(aes(color = as.logical(.data[[color_var]]))) +
+    scale_color_paletteer_d("fishualize::Bodianus_rufus", direction = -1) + 
+    theme_classic() +
+    theme(title = element_text(color = "midnightblue")) +
+    the_labs
+}
+```
+
+```{r}
+p <- lapply(X = c("MedianAgeMarriage", "Marriage", "WaffleHouses"),
+            FUN = function(x) {
+              plot_waffles(d, x_var = x) +
+                stat_smooth(method = "lm", fullrange = TRUE,
+                            fill = "darkolivegreen", color = "darkgreen") +
+                labs(x = x)
+            })
+wrap_plots(p, guides = "collect") &
+  theme(legend.position = "bottom")
+```
+
+
+
 
 ```{r}
 GGally::ggscatmat(d, columns = c("A", "M", "D")) +
@@ -47,16 +85,29 @@ GGally::ggscatmat(d, columns = c("A", "M", "D")) +
 We will be using this function in the plots to show the natural scales.
 
 ```{r}
-# Function used to reverse the scale function
-rev_scale <- function(x, d) {
-  center <- attr(d, which = "scaled:center")
-  scale <- attr(d, which = "scaled:scale")
-  stopifnot(is.finite(center), is.finite(scale))
+# A function to inverse transform the data to natural scale
+# will be used in plots below. Normally used with `base::scale()`.
+# If the base::scale function was used originally, the attributes contain 
+# the center and scale values.
+inv.scale <- function(x, 
+                      center = attr(x, which = "scaled:center"),
+                      scale = attr(x, which = "scaled:scale")) {
+  if(!is.finite(center)) center <- 0L
+  if(!is.finite(scale)) scale <- 1L
   center + x * scale
 }
+
+
+# Function used to reverse the scale function
+# rev_scale <- function(x, d) {
+#   center <- attr(d, which = "scaled:center")
+#   scale <- attr(d, which = "scaled:scale")
+#   stopifnot(is.finite(center), is.finite(scale))
+#   center + x * scale
+# }
 # test it
-t <- rev_scale(x = d$A, d = d$A)
-near(mean(t), attr(d$A, which = "scaled:center"), tol = 1e-5)
+# t <- rev_scale(x = d$A, d = d$A)
+# near(mean(t), attr(d$A, which = "scaled:center"), tol = 1e-5)
 ```
 
 
@@ -109,42 +160,49 @@ get the fitted $\mu_i$ by using a sequence of median age marriage of length 30
 from the `min(MedianAgeMarriage)` to `max(MedianAgeMarriage)`.
 
 ```{r}
-age_seq <- data.frame(A = seq(from = min(d$A), to = max(d$A), length.out = 30))
-b5.1_fitted <- age_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(
+  A = seq_range(d$A, n = 30, pretty = TRUE)
+)
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.1, newdata = ., probs = c(0.055, 0.945)) %>%
   as_tibble() %>%
-  bind_cols(age_seq)
-# glimpse(b5.1_fitted)
+  bind_cols(fitted$newdata)
+# str(fitted$data)
 ```
 
 and plot them 
 
 ```{r}
-b5.1_scat <- ggplot(data = d, mapping = aes(x = A, y = D)) +
-  geom_smooth(data = b5.1_fitted,
+p <- list()
+p$age <- ggplot(data = d, mapping = aes(x = A, y = D)) +
+  geom_smooth(data = fitted$data,
               aes(y = Estimate, ymin = Q5.5, ymax = Q94.5),
               stat = "identity",
               fill = "olivedrab1", color = "olivedrab4", alpha = 1, size = 1/2) +
   geom_point(aes(color = as.logical(South))) +
-  scale_x_continuous(
-      breaks = scales::breaks_extended(n = 7),
-      labels = scales::trans_format(
-        trans = function(x) rev_scale(x, d$A),  ## see rev_scale funciton above
-        format = scales::label_number(scale = 1))) +
-  scale_y_continuous(
-      breaks = scales::breaks_extended(n = 7),
-      labels = scales::trans_format(
-        trans = function(x) rev_scale(x, d$D),  ## see rev_scale funciton above
-        format = scales::label_number(scale = 1))) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 7),
+                     labels = function(x) {
+                       out <- inv.scale(x, 
+                                      center = mean(d$MedianAgeMarriage), 
+                                      scale = sd(d$MedianAgeMarriage))
+                       scales::label_number(accuracy = 0.1)(out)
+                     }) +
+  scale_y_continuous(breaks = scales::breaks_extended(n = 7),
+                     labels = function(x) {
+                       out <- inv.scale(x, 
+                                      center = mean(d$Divorce), 
+                                      scale = sd(d$Divorce))
+                       scales::label_number(accuracy = 0.1)(out)
+                     }) +
   scale_color_paletteer_d("calecopal::kelp1", direction = -1) +
-  coord_cartesian(xlim = range(age_seq$A)) +
   theme_minimal() +
   theme(legend.position = c(0.85, 0.85),
         title = element_text(color = "midnightblue")) +
   labs(title = "Divorce rate vs Median Marriage age",
-       color = "South = TRUE",
+       color = "South",
        x = "Median age", y = "Divorce rate")
-# b5.1_scat
+# p$age
 ```
 
 
@@ -185,67 +243,72 @@ summary(b5.2)
 
 
 ```{r}
-age_seq <- data.frame(M = seq(from = min(d$M), to = max(d$M), length.out = 30))
-b5.2_fitted <- age_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(
+  M = seq_range(d$M, n = 30, pretty = TRUE)
+)
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.2, newdata = ., probs = c(0.055, 0.945)) %>%
   as_tibble() %>%
-  bind_cols(age_seq)
-# glimpse(b5.2_fitted)
+  bind_cols(fitted$newdata)
 ```
 
 and plot them 
 
 ```{r}
-b5.2_scat <- ggplot(data = d, mapping = aes(x = M, y = D)) +
-  geom_smooth(data = b5.2_fitted,
+p$marriage <- ggplot(data = d, mapping = aes(x = M, y = D)) +
+  geom_smooth(data = fitted$data,
               aes(y = Estimate, ymin = Q5.5, ymax = Q94.5),
               stat = "identity",
               fill = "springgreen1", color = "springgreen4", alpha = 1, size = 1/2) +
   geom_point(aes(color = as.logical(South))) +
-  scale_x_continuous(
-      breaks = scales::breaks_extended(n = 7),
-      labels = scales::trans_format(
-        trans = function(x) rev_scale(x, d$M),  ## see rev_scale funciton above
-        format = scales::label_number(scale = 1))) +
-  scale_y_continuous(
-      breaks = scales::breaks_extended(n = 7),
-      labels = scales::trans_format(
-        trans = function(x) rev_scale(x, d$D),  ## see rev_scale funciton above
-        format = scales::label_number(scale = 1))) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 7),
+                     labels = function(x) {
+                       out <- inv.scale(x,
+                                      center = mean(d$Marriage),
+                                      scale = sd(d$Marriage))
+                       scales::label_number(accuracy = 0.1)(out)
+                     }) +
+  scale_y_continuous(breaks = scales::breaks_extended(n = 7),
+                     labels = function(x) {
+                       out <- inv.scale(x,
+                                      center = mean(d$Divorce),
+                                      scale = sd(d$Divorce))
+                       scales::label_number(accuracy = 0.1)(out)
+                     }) +
   scale_color_paletteer_d("calecopal::kelp1", direction = -1) +
-  coord_cartesian(xlim = range(age_seq$M)) +
   theme_minimal() +
   theme(legend.position = c(0.85, 0.85),
         title = element_text(color = "midnightblue")) +
   labs(title = "Divorce rate vs Marriage rate",
-       color = "South = TRUE",
+       color = "South",
        x = "Marriage rate", y = "Divorce rate")
-
+# p$marriage
 ```
 
 
 ```{r}
-b5.1_scat + b5.2_scat
+wrap_plots(p, guides = "collect") &
+  theme(legend.position = "bottom")
 ```
-
 
 
 ### Think before you regress
 
 
 ```{r}
-dag1_coord <- data.frame(
+p <- list()
+p$coord <- data.frame(
   name = c("A", "D", "M"),
   x = c(1, 2, 3),
   y = c(2, 1, 2)
 )
-dag1 <- ggdag::dagify(M ~ A,
+p$dag1 <- ggdag::dagify(M ~ A,
                       D ~ A + M,
                       coords = dag1_coord) %>%
-  ggdag::ggdag(node_size = 8) +
+  ggdag::ggdag(node_size = 8, panel.background = element_rect(fill = "aliceblue")) +
   ggthemes::theme_solid(fill = "snow2")
-# str(dag1)
-p1 <- ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+p$plot1 <- ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name)) +
   scale_color_paletteer_d("calecopal::kelp1") +
   scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
@@ -254,13 +317,13 @@ p1 <- ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_edges(edge_color = "midnightblue") +
   ggthemes::theme_solid(fill = "snow2") +
   theme(legend.position = "none")
-dag2 <- ggdag::dagify(M ~ A,
+
+p$dag2 <- ggdag::dagify(M ~ A,
                       D ~ A,
                       coords = dag1_coord) %>%
   ggdag::ggdag(node_size = 8) +
   ggthemes::theme_solid(fill = "snow2")
-# str(dag1)
-p2 <- ggplot(dag2$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+p$plot2 <- ggplot(dag2$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name)) +
   scale_color_paletteer_d("calecopal::kelp1") +
   scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
@@ -269,7 +332,8 @@ p2 <- ggplot(dag2$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_edges(edge_color = "midnightblue") +
   ggthemes::theme_solid(fill = "snow2") +
   theme(legend.position = "none")
-p1 | p2  # the | operator comes from patchwork library
+
+p$plot1 | p$plot2
 ```
 
 ### Testable implications
@@ -341,18 +405,15 @@ summary(b5.3)
 tidybayes::get_variables(b5.3)
 ```
 
-
 ```{r}
-b5.3_coef <- b5.3 %>%
-  gather_draws(b_Intercept, b_M, b_A)
-glimpse(b5.3_coef)
-b5.3$formula$formula
-```
-
-```{r}
-ggplot(b5.3_coef, aes(x = .value, y = .variable)) +
-  stat_pointinterval(.width = c(0, 0.055, 0.945, 1)) +
-  ggdist::theme_ggdist() +
+b5.3 %>%
+  gather_draws(b_Intercept, b_M, b_A) %>%
+  ggplot(aes(x = .value, y = .variable)) +
+  stat_pointinterval(point_interval = mean_qi,
+                     .width = c(0, 0.055, 0.945, 1),
+                     fatten_point = 2,
+                     color = "tan4") +
+  ggthemes::theme_hc() +
   labs(title = deparse1(b5.3$formula$formula),
        y = NULL)
 ```
@@ -380,9 +441,9 @@ data("WaffleDivorce")
 d <- WaffleDivorce
 # standardize the variables
 d <- d %>%
-  mutate(A = as.vector(scale(MedianAgeMarriage)),
-         M = as.vector(scale(Marriage)),
-         D = as.vector(scale(Divorce)))
+  mutate(A = scale(as.vector(MedianAgeMarriage)),
+         M = scale(as.vector(Marriage)),
+         D = scale(as.vector(Divorce)))
 # glimpse(d)
 ```
 
@@ -425,32 +486,31 @@ and again we get the fitted $\mu_i$ to plot them
 ```{r}
 # get the fit on the original data and
 # add columns to original data to prepare for the plot
-b5.4_fitted <- fitted(b5.4) %>%
-  as_tibble() %>%
-  rename("M_mu" = Estimate,
-         "M_mu_err" = Est.Error,
-         "M_mu_Q2.5" = Q2.5,
-         "M_mu_Q97.5" = Q97.5) %>%
+fitted <- list()
+fitted$data <- fitted(b5.4) %>%
+  as.data.frame() %>%
   bind_cols(d[, c("D", "A", "M")]) %>%
-  mutate(M_res = M - M_mu)
-# glimpse(b5.4_fitted)
+  mutate(resid = M - Estimate)
+# str(fitted$data)
 ```
 
 and plot the divorce against the  marriage rate residuals, free from the age
 effect
 
 ```{r}
+p <- list()
 colr <- unclass(paletteer::paletteer_d("calecopal::buow"))
-b5.4_pA <- ggplot(data = b5.4_fitted, aes(x = A, y = M)) +
+p$A <- ggplot(data = fitted$data, aes(x = A, y = M)) +
   geom_point(aes(color = D)) +
-  geom_segment(aes(xend = A, yend = M_mu), size = 0.5, color = "pink") +
-  geom_line(aes(y = M_mu), color = "pink4") +
+  geom_segment(aes(xend = A, yend = Estimate), size = 0.5, color = "pink") +
+  geom_line(aes(y = Estimate), color = "pink4") +
   scale_color_gradientn(colors = colr) +
   theme_classic() +
   theme(legend.position = "none") +
   labs(x = "Median age (standardized)",
        y = "Marriage rate (standardized)",
        title = "Residual plot:  Marriage rate vs Median age")
+# p$A
 ```
 so now we use the residuals of the marriage rate to represent marriage **free of
 any influence by the median age of marriage**
@@ -458,27 +518,13 @@ any influence by the median age of marriage**
 We use the `residuals()` function which is an alias of `predictive_error()`
 but **don't use `predictive_error()`** as it return the error for every
 posterior sample and every observation.  We just want the **expected** for 
-every initial observations od $D$.
-
-```{r}
-b5.4_res <- residuals(b5.4) %>%
-  as_tibble() %>%
-  bind_cols(d[, c("D", "A", "M")])
-# glimpse(b5.4_res)
-```
-
-`residuals()` return the same values as `fitted`, the difference is that with
-`fitted`, the residuals have to be calculated
-
-```{r}
-near(sum(b5.4_fitted$M_res - b5.4_res$Estimate), 0)
-```
+every initial observations of $D$.
 
 and so we can now plot the divorce against the *marriage rate residuals*
 
 ```{r}
 colr <- unclass(paletteer::paletteer_d("calecopal::buow"))
-b5.4_pB <- ggplot(data = b5.4_res, aes(x = Estimate, y = D)) +
+p$B <- ggplot(data = fitted$data, aes(x = resid, y = D)) +
   stat_smooth(method = "lm", fullrange = TRUE, fill = "wheat") +
   geom_point(aes(color = D)) +
   scale_color_gradientn(colors = colr) +
@@ -488,6 +534,7 @@ b5.4_pB <- ggplot(data = b5.4_res, aes(x = Estimate, y = D)) +
   labs(x = "residual of marriage rate",
        y = "divorce",
        title = "Predictor residual plot: Divorce vs Marriage rate")
+# p$B
 ```
 
 which allows us to conclude that the *marriage rate seems to have little impact
@@ -495,26 +542,28 @@ on the divorce rate.
 
 ```{r}
 # cowplot::plot_grid(b5.4_pA , b5.4_pB)
-b5.4_pA + b5.4_pB
+(p$A | p$B) +
+  plot_annotation("Fig 5.4: Divorce vs Residual marriage rate") &
+  theme(title = element_text(color = "midnightblue"))
 ```
 
 
 #### Posterior prediction plots
 
-
-the fitted estimate with residuals
+The textbook mentions posterior predictions but the plot in figure 5.5 sems
+to have the intervals of the *fitted* values.
 
 ```{r}
-a_file <- here::here(getwd(), "fits", "b05_03.rds")  # rds file location
-b5.3 <- readRDS(file = a_file)  # load the file
-b5.3_fitted <- fitted(b5.3) %>%
-  as_tibble() %>%
-  bind_cols(d)
+predict <- list()
+predict$data <- predict(b5.3) %>%
+  as.data.frame() %>%
+  mutate(D = d$D)
+# str(predict$data)
 ```
 
 
 ```{r}
-ggplot(data = b5.3_fitted, aes(x = D, y = Estimate)) +
+ggplot(data = predict$data, aes(x = D, y = Estimate)) +
   geom_point(color = "firebrick4") +
   geom_linerange(aes(ymin = Estimate - Est.Error, ymax = Estimate + Est.Error),
                  color = "firebrick3") +
@@ -532,29 +581,42 @@ ggplot(data = b5.3_fitted, aes(x = D, y = Estimate)) +
 We are using the same DAG as above
 
 ```{r}
-dag1_coord <- data.frame(
+p <- list()
+p$coord <- data.frame(
   name = c("A", "D", "M"),
   x = c(1, 2, 3),
   y = c(2, 1, 2)
 )
-dag1 <- ggdag::dagify(M ~ A,
-                      D ~ A + M,
-                      coords = dag1_coord) %>%
+p$dag <- ggdag::dagify(M ~ A,
+                       D ~ A + M,
+                      coords = p$coord) %>%
   ggdag::ggdag(node_size = 8) +
   ggthemes::theme_solid(fill = "snow2")
-ggplot(dag1$data, aes(x = x, y = y, xend = xend, yend = yend)) +
+# dag1_coord <- data.frame(
+#   name = c("A", "D", "M"),
+#   x = c(1, 2, 3),
+#   y = c(2, 1, 2)
+# )
+# dag1 <- ggdag::dagify(M ~ A,
+#                       D ~ A + M,
+#                       coords = dag1_coord) %>%
+#   ggdag::ggdag(node_size = 8) +
+#   ggthemes::theme_solid(fill = "snow2")
+ggplot(p$dag$data, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_dag_point(aes(color = name)) +
   scale_color_paletteer_d("calecopal::kelp1") +
   scale_x_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
   scale_y_continuous(NULL, breaks = NULL, expand = c(0.1, 0.1)) +
   geom_dag_text(color = "midnightblue") +
   geom_dag_edges(edge_color = "midnightblue") +
-  ggthemes::theme_solid(fill = "snow2") +
+  ggthemes::theme_solid(fill = "aliceblue") +
   theme(legend.position = "none")
 ```
 
-The full model implies 2 effects, $A$ on $M$ and $D$ and $A$ on $M$.  in other words
-2 structural equations are involved or expressed differently, 2 formula in `brms`
+
+**IMPORTANT**: The full model implies 2 effects, $A$ on $M$ and $D$ and $A$ on $M$. 
+In other words 2 structural equations are involved or expressed differently, 
+2 formulas in `brms`.
 
 
 ```{r}
@@ -562,7 +624,7 @@ d_model <- brms::bf(D ~ 1 + A + M)
 m_model <- brms::bf(M ~ 1 + A)
 ```
 
-The `set_rescor(FALSE` indicates that we do not want `brms` to add the residual
+The `set_rescor(FALSE)` indicates that we do not want `brms` to add the residual
 correlation between $D$ and $M$.
 
 Also the argument `resp` is used to identify the response.
@@ -586,40 +648,76 @@ b5.3A <- readRDS(a_file)
 summary(b5.3A)
 ```
 
-We manipulate by fixing $M=0$
+We manipulate $M$ $M=0$ and predicting $D$ with $A$ with this new
+counterfactual $M$.
 
 ```{r}
-D_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30),
-                    M = 0)
-b5.3A_D_predict <- predict(b5.3A, resp = "D", newdata = D_seq) %>%
+predict <- list()
+predict$newdata <- data.frame(
+  A = seq_range(d$A, n = 30L, pretty = TRUE),
+  M = 0)
+# NOTE: the argument resp = "D" is important to select the right model
+predict$data <- predict(b5.3A, resp = "D", newdata = predict$newdata) %>%
   data.frame() %>%
-  bind_cols(D_seq)
-p1 <- ggplot(b5.3A_D_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  bind_cols(predict$newdata)
+# str(predict$data)
+p <- list()
+p$D <- ggplot(predict$data,
+              aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  # coord_cartesian(xlim = c(-2, 2), ylim = c(-2, 2)) +
   geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
-  coord_cartesian(ylim = c(-2, 2)) +
+  # coord_cartesian(ylim = c(-2, 2)) +
   ggthemes::theme_clean() +
-  labs(title = "Total conterfactual effect of A on D",
+  labs(title = "Total counterfactual effect of A on D",
        x = "Manipulated A", y = "Counterfactual D")
+p$D
+
+
+# D_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30),
+#                     M = 0)
+# b5.3A_D_predict <- predict(b5.3A, resp = "D", newdata = D_seq) %>%
+#   data.frame() %>%
+#   bind_cols(D_seq)
+# p1 <- ggplot(b5.3A_D_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+#   geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
+#   coord_cartesian(ylim = c(-2, 2)) +
+#   ggthemes::theme_clean() +
+#   labs(title = "Total conterfactual effect of A on D",
+#        x = "Manipulated A", y = "Counterfactual D")
 # p1
 ```
 
 
+To estimate the influence of $A$ on $M$ we only need to regress $A$ on $M$ as there
+is no other known factor influencing $M$.
 
 ```{r}
-M_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30))
-b5.3A_M_predict <- predict(b5.3A, resp = "M", newdata = M_seq) %>%
+predict <- list()
+predict$newdata <- data.frame(A = seq_range(d$A, n = 30L, pretty = TRUE))
+predict$data <- predict(b5.3A, resp = "M", newdata = predict$newdata) %>%
   data.frame() %>%
-  bind_cols(M_seq)
-p2 <- ggplot(b5.3A_M_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
-  geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
-  coord_cartesian(ylim = c(-2, 2)) +
+  bind_cols(predict$newdata)
+p$M <- ggplot(predict$data, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+  geom_smooth(stat = "identity", fill = "khaki", color = "khaki4") +
+  # coord_cartesian(ylim = c(-2, 2)) +
   ggthemes::theme_clean() +
-  labs(title = "Total conterfactual effect of A on M",
-       x = "Manipulated A", y = "Counterfactual D")
+  labs(title = "Single effect of A on M",
+       x = "A", y = "M") 
+
+# M_seq <- data.frame(A = seq(from = -2, to = 2, length.out = 30))
+# b5.3A_M_predict <- predict(b5.3A, resp = "M", newdata = M_seq) %>%
+#   data.frame() %>%
+#   bind_cols(M_seq)
+# p2 <- ggplot(b5.3A_M_predict, aes(x = A, y = Estimate, ymin = Q2.5, ymax = Q97.5)) +
+#   geom_smooth(stat = "identity", fill = "palegoldenrod", color = "peru") +
+#   coord_cartesian(ylim = c(-2, 2)) +
+#   ggthemes::theme_clean() +
+#   labs(title = "Total conterfactual effect of A on M",
+#        x = "Manipulated A", y = "Counterfactual D")
 ```
 
 ```{r}
-p1 + p2
+wrap_plots(p)
 ```
 
 
@@ -634,10 +732,12 @@ cause problems when plotting and in modeling.
 ```{r}
 data(milk)
 d <- milk %>%
+  as.data.frame() %>%
   tidyr::drop_na() %>%
   mutate(K = as.vector(scale(kcal.per.g)),
          N = as.vector(scale(neocortex.perc)),
          M = as.vector(scale(log(mass))))
+skimr::skim(d)
 # it should give us a dataframe with 17 rows
 stopifnot(nrow(d) == 17)
 # glimpse(d)
@@ -693,46 +793,57 @@ tidybayes::get_variables(b5.5)
 
 
 ```{r}
-b5.5_postlong <- b5.5 %>%
+post <- list()
+post$long <- b5.5 %>%
   tidybayes::gather_draws(b_Intercept, b_N, sigma)
-b5.5_post_hist <- ggplot(b5.5_postlong, aes(x = .value)) +
+ggplot(post$long, aes(x = .value)) +
   stat_halfeye(aes(fill = .variable), point_interval = mean_hdi, .width = 0.89) +
   scale_fill_paletteer_d(palette = "calecopal::dudleya") +
   scale_x_continuous(breaks = scales::breaks_width(width = 0.25)) +
   theme_minimal() +
   theme(legend.position = "none") +
   facet_wrap(. ~ .variable, ncol = 1, scales = "fixed")
-b5.5_post_hist
 ```
 
 fit for different confidence intervals
 
 ```{r}
-N_seq <- data.frame(N = seq(from = -2, to = 2, length.out = 30))
-b5.5_fitted <- N_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(N = seq_range(d$N, n = 30L, pretty = TRUE))
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.5, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
   as_tibble() %>%
-  bind_cols(N_seq)
+  bind_cols(fitted$newdata)
 ```
 
 
-and plot the fit
+and plot the fits with different variables and counterfactuals.  We use this plotting function
 
 ```{r}
-p1 <- ggplot(b5.5_fitted, aes(x = N, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "plum1") +
-  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "plum") +
-  geom_line(color = "plum4", size = 1) +
-  geom_point(data = b5.5$data, aes(x = N, y = K),
-             color = "steelblue4", size = 2) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  coord_fixed(xlim = c(-2, 2), ylim = c(-2, 2)) +
-  ggthemes::theme_few() +
+plot_milk <- function(original, fitted, x_var = "N", y_var = "Estimate",
+                      clrs = list(fill1 = "steelblue1", fill2 = "steelblue",
+                                  line = "steelblue4", point = "plum4")) {
+  ggplot(fitted, aes(x = .data[[x_var]], y = .data[[y_var]])) +
+    geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = clrs$fill1) +
+    geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = clrs$fill2) +
+    geom_line(color = clrs$line, size = 1) +
+    geom_point(data = original, aes(x = .data[[x_var]], y = K), 
+             color = clrs$point, size = 2) +
+    scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
+    scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
+    coord_fixed(ratio = 9/16) +
+    ggthemes::theme_few()
+  }
+```
+
+```{r}
+p <- list()
+p$N <- plot_milk(original = b5.5$data, fitted = fitted$data, x_var = "N",
+                 clrs = list(fill1 = "steelblue1", fill2 = "steelblue",
+                                  line = "steelblue4", point = "plum4")) +
   labs(title = "Model 5.5", subtitle = deparse1(b5.5$formula$formula),
        x = "neocrotex percent (std)", y = "kilocal per g (std)")
 ```
-
 
 
 ### Model 5.6
@@ -769,62 +880,32 @@ b5.6 <- readRDS(file = a_file)
 print(b5.6, digits = 3)
 ```
 
-and show the coefficient plot
+and the plot for the kilo vs mass
 
 ```{r}
 tidybayes::get_variables(b5.6)
 ```
 
-
-
 ```{r}
-b5.6_postlong <- b5.6 %>%
-  tidybayes::gather_draws(b_Intercept, b_M, sigma)
-b5.6_post_int <- ggplot(b5.6_postlong, aes(x = .value)) +
-  stat_gradientinterval(aes(fill = .variable), point_interval = mean_hdi, .width = 0.89) +
-  scale_fill_paletteer_d(palette = "calecopal::dudleya") +
-  scale_x_continuous(breaks = scales::breaks_width(width = 0.25)) +
-  theme_minimal() +
-  theme(legend.position = "none") +
-  facet_wrap(. ~ .variable, ncol = 1, scales = "fixed")
-b5.6_post_int
-```
-
-fit for different confidence intervals
-
-```{r}
-M_seq <- data.frame(M = seq(from = -2, to = 2, length.out = 30))
-b5.6_fitted <- M_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(M = seq_range(d$M, n = 30L, pretty = TRUE))
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.6, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
   as_tibble() %>%
-  bind_cols(M_seq)
-```
+  bind_cols(fitted$newdata)
 
-
-and plot the fit
-
-```{r}
-p2 <- ggplot(b5.6_fitted, aes(x = M, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "plum1") +
-  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "plum") +
-  geom_line(color = "plum4", size = 1) +
-  geom_point(data = b5.6$data, aes(x = M, y = K),
-             color = "steelblue4", size = 2) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  coord_fixed(xlim = c(-2, 2), ylim = c(-2, 2)) +
-  ggthemes::theme_few() +
-  labs(title = "Model 5.6", subtitle = deparse1(b5.6$formula$formula),
+p$M <- plot_milk(original = b5.6$data, fitted = fitted$data, x_var = "M",
+                 clrs = list(fill1 = "plum1", fill2 = "plum",
+                                  line = "plum4", point = "steelblue4")) +
+    labs(title = "Model 5.6", subtitle = deparse1(b5.6$formula$formula),
        x = "body mass (std of log)", y = "kilocal per g (std)")
 ```
 
 
-```{r}
-p1 + p2
-```
-
 
 ### Model 5.7
+
+we now add neocortex and log mass together to see their mutual effect,
 
 
 $$
@@ -860,71 +941,59 @@ b5.7 <- readRDS(file = a_file)
 print(b5.7, digits = 3)
 ```
 
-get the conterfactual data **holding $N = 0$**
+get the conterfactual data **holding $M = 0$**
 
 ```{r}
-N_seq <- data.frame(N = seq(from = -2.5, to = 2.5, length.out = 30),
-                    M = 0)
-b5.7_fitted_N <- N_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(
+  N = seq_range(d$N, n = 30L, pretty = TRUE),
+  M = 0
+)
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.7, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
   as_tibble() %>%
-  bind_cols(N_seq)
-# glimpse(b5.7_fitted_N)
+  bind_cols(fitted$newdata)
 ```
 
 and the plot
 
 ```{r}
-p1 <- ggplot(b5.7_fitted_N, aes(x = N, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "burlywood1") +
-  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "burlywood") +
-  geom_line(color = "burlywood4", size = 1) +
-  geom_point(data = b5.7$data, aes(x = N, y = K),
-             color = "steelblue4", size = 2) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  coord_fixed(xlim = c(-2.5, 2.5), ylim = c(-2.5, 2.5)) +
-  ggthemes::theme_few() +
-  labs(title = "Model 5.7 - Counterfactual holding M = 0", 
+p$N_counter <- plot_milk(original = b5.7$data, fitted = fitted$data, x_var = "N",
+                 clrs = list(fill1 = "steelblue1", fill2 = "steelblue",
+                                  line = "steelblue4", point = "plum4")) +
+  labs(title = "Model 5.7 - Holding M = 0", 
        subtitle = deparse1(b5.7$formula$formula),
-       x = "neocortex percent (std)", y = "kilocal per g (std)")
-# p1
+       x = "neocrotex percent (std)", y = "kilocal per g (std)")
 ```
 
 
 get the conterfactual data **holding $N = 0$**
 
 ```{r}
-M_seq <- data.frame(M = seq(from = -2.5, to = 2.5, length.out = 30),
-                    N = 0)
-b5.7_fitted_M <- M_seq %>%
+fitted <- list()
+fitted$newdata <- data.frame(
+  M = seq_range(d$M, n = 30L, pretty = TRUE),
+  N = 0
+)
+fitted$data <- fitted$newdata %>%
   fitted(object = b5.7, newdata = ., probs = c(0.025, 0.975, 0.25, 0.75)) %>%
   as_tibble() %>%
-  bind_cols(M_seq)
+  bind_cols(fitted$newdata)
 ```
 
 and the plot
 
 ```{r}
-p2 <- ggplot(b5.7_fitted_M, aes(x = M, y = Estimate)) +
-  geom_ribbon(aes(ymin = Q2.5, ymax = Q97.5), fill = "burlywood1") +
-  geom_ribbon(aes(ymin = Q25, ymax = Q75), fill = "burlywood") +
-  geom_line(color = "burlywood4", size = 1) +
-  geom_point(data = b5.7$data, aes(x = M, y = K),
-             color = "steelblue4", size = 2) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.5)) +
-  coord_fixed(xlim = c(-2.5, 2.5), ylim = c(-2.5, 2.5)) +
-  ggthemes::theme_few() +
-  labs(title = "Model 5.7 - Counterfactual holding N = 0", 
-       subtitle = deparse1(b5.7$formula$formula),
+p$M_counter <- plot_milk(original = b5.7$data, fitted = fitted$data, x_var = "M",
+                 clrs = list(fill1 = "plum1", fill2 = "plum",
+                                  line = "plum4", point = "steelblue4")) +
+    labs(title = "Model 5.7 - Holding N = 0", subtitle = deparse1(b5.7$formula$formula),
        x = "body mass (std of log)", y = "kilocal per g (std)")
-# p2
 ```
 
 
 ```{r}
-p1 + p2
+wrap_plots(p)
 ```
 
 
@@ -983,13 +1052,13 @@ variable because it relates to 2 parameters instead of 1.
 
 Load data, standardize and make sure *clade* is a factor. > With `brms` there 
 is no need to create the contrasts.  We simply make sure that `*clade* is a factor.
-`brms` wil create the contrasts by itself.
+`brms` will create the contrasts by itself.
 
 ```{r}
 data("milk")
 d <- milk %>% 
   mutate(K = as.vector(scale(kcal.per.g)))
-# glimpse(d)
+# skimr::skim(d)
 stopifnot(is.factor(d$clade))
 ```
 
@@ -1030,19 +1099,17 @@ summary(b5.9)
 tidybayes::get_variables(b5.9)
 ```
 
-
+and plot the result
 
 ```{r}
-b5.9_post <- 
 tidybayes::gather_draws(b5.9, b_cladeApe, b_cladeNewWorldMonkey, 
                         b_cladeOldWorldMonkey, b_cladeStrepsirrhine) %>%
-  mean_hdi(.width = 0.95) %>%
+  mean_hdi(.width = 0.89) %>%
   ggplot(aes(x = .value, xmin = .lower, xmax = .upper, y = .variable)) +
-  geom_pointinterval() +
+  geom_vline(xintercept = 0, colour = "darkgoldenrod") +
+  geom_pointinterval(fatten_point = 2.5, color = "yellowgreen", size = 5) +
   ggthemes::theme_clean() + 
-  labs(title = "Expected kcal by clade",
-       x = "kcal (std)", y = "clade")
-b5.9_post
+  labs(title = "Expected kcal by clade", x = "kcal (std)", y = NULL)
 ```
 
 

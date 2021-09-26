@@ -133,6 +133,9 @@ scales::show_col(tmp$pal)
 tmp$pal <- paletteer::paletteer_c("grDevices::Tropic", n = 16)
 scales::show_col(tmp$pal)
 
+tmp$pal <- paletteer::paletteer_c("grDevices::Tropic", n = 16)
+scales::show_col(tmp$pal)
+
 
 # clients -----------------------------------------------------------------
 
