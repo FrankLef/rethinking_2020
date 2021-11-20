@@ -44,19 +44,30 @@ and we use the following DAG, see overthinking box in introduction of section 8.
 for another possible DAG.
 
 ```{r}
-dag <- ggdag::dagify(R ~ U, G ~ U + R, G ~ C) %>%
-  ggdag::tidy_dagitty() %>%
-  mutate(unobserved = name == "U")
-# glimpse(dag)
-ggplot(dag, aes(x = x, y = y, xend = xend, yend = yend)) +
-  geom_dag_point(aes(color = unobserved)) +
-  geom_dag_text(color = "indianred") +
-  geom_dag_edges() +
-  scale_color_manual(values = c("TRUE" = "chartreuse2", "FALSE" = "khaki2")) +
+dag <- list()
+dag$coords <- tibble(name = c("C", "G", "R", "U"),
+                     x = c(3, 2, 1, 2),
+                     y = c(2, 2, 2, 1))
+dag$g <- dagify(
+  G ~ C + R + U,
+  R ~ U,
+  latent = "U",
+  outcome = "G",
+  coords = dag$coords)
+p <- list()
+p$g <- dag$g %>%
+  ggdag_status(aes(color = status), as_factor = TRUE, node_size = 14,
+               text_size = 4, text_col = "midnightblue") +
+  # geom_dag_point(aes(color = status), size = 3, text = FALSE) +
+  # geom_dag_text(color = "midnightblue") +
+  scale_color_paletteer_d("khroma::light", 
+                          na.value = "honeydew3",
+                          direction = 1) +
   theme_dag() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = "none") +
-  labs(title = "rugged data dag")
+  theme(legend.position = c(0.8, 0.2)) +
+  labs(title = "African nations", 
+       subtitle = "Section 8.1")
+p$g
 ```
 
 

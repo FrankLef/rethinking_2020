@@ -79,9 +79,6 @@ GGally::ggscatmat(d, columns = c("A", "M", "D")) +
 ```
 
 
-
-
-
 We will be using this function in the plots to show the natural scales.
 
 ```{r}
