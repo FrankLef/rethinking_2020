@@ -5,6 +5,7 @@ library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
 library(loo)
+library(simstudy)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -28,39 +29,35 @@ Load the data
 
 ```{r}
 data(chimpanzees)
-d <- chimpanzees
+d <- chimpanzees %>%
+  mutate(actor = factor(actor),
+         treatment = factor(1 + prosoc_left + 2 * condition, levels = 1:4,
+                            labels = c("a/r", "a/l", "p/r", "p/l"), ordered = TRUE))
 rm(chimpanzees)
+skimr::skim(d)
+```
+
+We have added the variable `treatment` that is a
+code for `prosoc_left` and `condition` variables with the following meanings
+
+
+```{r}
 d %>%
-  distinct(prosoc_left, condition) %>%
-  mutate(treatment = 1 + prosoc_left + 2 * condition,
-         description = c("Alone and two food items on the right",
+  distinct(prosoc_left, condition, treatment) %>%
+  mutate(ldescription = c("Alone and two food items on the right",
                          "Alone and two food items on the left",
                          "Partner and two food items on the right",
                          "Partner and two food items on the left"))
 ```
 
-Create a variable `treatment` that is a
-code for `prosoc_left` and `condition` variables with the following meanings
-
-
-```{r}
-d <- d %>%
-  mutate(actor = factor(actor),
-         treatment = factor(1 + prosoc_left + 2 * condition, levels = 1:4, ordered = TRUE),
-         labels = factor(treatment, levels = 1:4, labels = c("a/r", "a/l", "p/r", "p/l")),
-         side = factor(prosoc_left + 1),
-         cond = factor(condition + 1))
-skimr::skim(d)
-```
-
-The model used will be
+The model used will 
 
 $$
 \begin{align*}
 pulled\_left_i &\sim \mathcal{Binomial}(1, p_i) \\
 logit(p_i) &= \alpha_{actor[i]} + \beta_{treatment[i]} \\
-\alpha_j &\sim \mathcal{N}(0, sd) \\
-\beta_k &\sim \mathcal{N}(0, sd) \\
+\alpha_j &\sim \mathcal{N}(0, \omega) \\
+\beta_k &\sim \mathcal{N}(0, \omega) \\
 &\text{sd to be determined}
 \end{align*}
 $$
@@ -69,8 +66,7 @@ $$
 #### Prior for $\alpha$
 
 
-We begin with the one-intercept only model, the "null" model as we can maybe call
-it.  It refers to a general mean for all $p_i$.
+We begin with the one-intercept only model.  It refers to a general mean for all $p_i$.
 
 $$
 \begin{align*}
@@ -86,11 +82,10 @@ information about the criterion. In this case, that information is that each
 `pulled_left` corresponds to a single trial, i.e. `trials(1)` which corresponds
 to the $n = 1$ in $Binomial(1, p_i)$
 
-We will use 2 sd values for $\alpha \sim \mathcal{N}(0, sd)$.
+We will use 2 $\omega$ values for $\alpha \sim \mathcal{N}(0, \omega)$.
 
 ```{r}
-prior_alpha_sd <- c(10, 1.5)
-prior_alpha_sd
+c(10, 1.5)
 ```
 
 
@@ -109,9 +104,6 @@ b11.1 <- readRDS(file = a_file)
 # b11.1 <- brms::add_criterion(b11.1, criterion = c("waic", "loo"))
 # saveRDS(b11.1, file = a_file)
 summary(b11.1)
-# convert the result using the inverse link funciton,
-# in this case the logistic funciton or inv_logit()
-brms::inv_logit_scaled(fixef(b11.1))
 ```
 
 and we convert the result using `brms::inv_logit_scaled()`.
@@ -155,21 +147,78 @@ and we visualize the outcome using the prior samples
 
 
 ```{r}
-b11.1_prior <- prior_samples(b11.1)
-b11.1b_prior <- prior_samples(b11.1b)
-b11.1_prior_df <- bind_rows(b11.1_prior, b11.1b_prior) %>%
-  mutate(p = inv_logit_scaled(Intercept),
-         id = rep(c("sd = 10", "sd = 1.5"), each = n() / 2))
+samples <- list()
+samples$data1 <- data.frame(model = "sd = 10",
+                            intercept = prior_draws(b11.1))
+samples$data2 <- data.frame(model = "sd = 1.5",
+                            intercept = prior_draws(b11.1b))
+samples <- within(samples, {
+  data <- bind_rows(data1, data2) %>%
+    mutate(p = inv_logit_scaled(Intercept))
+})
+# samples$data
 
-ggplot(b11.1_prior_df, aes(x = p, fill = id, color = id)) +
-  geom_density(aes(y = ..count..), alpha = 3/4) +
-  scale_fill_paletteer_d("lisa::PavelTchelitchew") +
-  scale_color_paletteer_d("lisa::PavelTchelitchew") +
+ggplot(samples$data, aes(x = p, color = model)) +
+  geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
+  scale_color_manual(values = c("orange", "mediumseagreen")) +
   ggthemes::theme_gdocs() +
   theme(legend.position = c(0.5, 0.8)) +
-  labs(title = "Density of pulled_left with prior",
+  labs(title = "Prior density of pulled_left",
        subtitle = "Model 11.1 and 11.1b",
-       x = "prob. of pulled_left")
+       x = "prior prob. of pulled_left", y = NULL)
+```
+
+We could also use the package `simstudy` to simulate the prior.  This will be
+the favored approach in this project.  The advantage of doing this are that
+
+1. it is much faster and easier to modify than running `brm` repeatedly
+2. it avoids possible problems of convergence when using a fit
+3. it allows us to use a single variable such as $treatment$ instead of creating
+separate prior for each when using `brms`. See what @kurtz2020b has to do in its
+version of chapter 8. The way Kurtz did it it render the `tidybayes` package
+less useful.
+
+##### Prior for $\alpha$ with `simstudy`
+
+Using `simstudy` is actually pretty simple
+
+1 + prosoc_left + 2 * condition
+
+```{r}
+set.seed(as.integer(as.Date("2021-11-24")))
+sim <- list(n = 4000)
+sim <- within(sim, {
+  defs <- defData(varname = "prosoc_left", dist = "binary", formula = 0.5)
+  defs <- defData(defs, varname = "condition", dist = "binary", formula = 0.5)
+  defs <- defData(defs, varname = "treat", dist = "nonrandom", 
+                  formula = "1 + prosoc_left + 2 * condition")
+  defs <- defData(defs, varname = "a", dist = "normal", formula = 0, variance = 10^2)
+  defs <- defData(defs, varname = "pulled_left", dist = "binary", formula = "a", 
+                  link = "logit")
+  data1 <- genData(n = n, dtDefs = defs)
+  
+  defs <- updateDef(defs, changevar = "a", newvariance = 1.5^2)
+  data2 <- genData(n = n, dtDefs = defs)
+})
+# glimpse(sim$data1)
+
+
+
+p <- list()
+p$df <- rbind(data.frame(sim$data1, "model" = "sd = 10"),
+              data.frame(sim$data2, "model" = "sd = 1.5")) %>%
+  mutate(p = gtools::inv.logit(a))
+# glimpse(p$df)
+
+ggplot(p$df, aes(x = p, color = model)) +
+  geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
+  scale_color_manual(values = c("orange", "mediumseagreen")) +
+  ggthemes::theme_gdocs() +
+  theme(legend.position = "none") +
+  labs(title = "Prior density of pulled_left",
+       subtitle = "Simulation with simstudy",
+       x = "prior prob. of pulled_left", y = NULL)
+
 ```
 
 
@@ -178,6 +227,10 @@ ggplot(b11.1_prior_df, aes(x = p, fill = id, color = id)) +
 Now we find the sd value for the prior $\beta_k &\sim \mathcal{N}(0, sd)$.
 Note that Solomon Kurtz in @kurtz2020b uses `inv_logit_scaled()` whereas
 mcElreath in @elreath2020 uses `inv_logit()`.
+
+**Important**: In practice we could use the same prior as for $\alpha$ just above.
+In this case however we combine the impact of $\alpha$ and $\beta$ to illustrate
+the weirdness of flat priors.  Comment from MacElreath at the end of p. 328.
 
 $$
 \begin{align*}
@@ -217,7 +270,6 @@ brms::inv_logit_scaled(fixef(b11.2))
 ```
 
 
-
 then the fit with $sd = 0.5$
 
 ```{r}
@@ -245,25 +297,102 @@ brms::inv_logit_scaled(fixef(b11.3))
 ```
 
 ```{r}
-b11.2_prior <- prior_samples(b11.2)
-b11.3_prior <- prior_samples(b11.3)
+samples <- list()
+samples$data1 <- data.frame(model = "sd = 10",
+                            intercept = prior_draws(b11.2))
+samples$data2 <- data.frame(model = "sd = 0.5",
+                            intercept = prior_draws(b11.3))
+samples <- within(samples, {
+  data1 <- data1 %>%
+    mutate(p1 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment1),
+           p2 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment2),
+           p3 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment3),
+           p4 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment4)) %>%
+    mutate(diff = abs(p1 - p2))
+  data2 <- data2 %>%
+    mutate(p1 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment1),
+           p2 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment2),
+           p3 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment3),
+           p4 = inv_logit_scaled(intercept.b_a + intercept.b_b_treatment4)) %>%
+    mutate(diff = abs(p1 - p2))
+  data <- bind_rows(data1, data2)
+})
 
-b11.2_prior_df <- bind_rows(b11.2_prior, b11.3_prior) %>%
-  mutate(p1 = inv_logit_scaled(b_a + b_b_treatment1),
-         p2 = inv_logit_scaled(b_a + b_b_treatment2),
-         diff = abs(p1 - p2),
-         id = rep(c("sd = 10", "sd = 0.5"), each = n() / 2))
-
-ggplot(b11.2_prior_df, aes(x = diff, fill = id, color = id)) +
-  geom_density(aes(y = ..count..), alpha = 3/4) +
-  scale_fill_paletteer_d("lisa::BarnettNewman", direction = 1) +
-  scale_color_paletteer_d("lisa::BarnettNewman", direction = 1) +
+ggplot(samples$data, aes(x = diff, color = model)) +
+  geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
+  scale_color_manual(values = c("orange", "mediumseagreen")) +
   ggthemes::theme_gdocs() +
   theme(legend.position = c(0.5, 0.8)) +
-  labs(title = "Density of difference: pulled_left with prior",
-       subtitle = "Model 11.2 and 11.3",
-       x = "prob. of pulled_left")
+  labs(title = "Prior density of pulled_left",
+       subtitle = "Model 11.1 and 11.1b",
+       x = "prior prob. of pulled_left", y = NULL)
 ```
+
+
+##### Prior for $\beta$ with `simstudy`
+
+
+```{r}
+set.seed(as.integer(as.Date("2021-11-25")))
+sim <- list(n = 1000)
+# sim$specs <- list("b_ar" = c("mean" = 0, "var" = 10^2),
+#                   "b_al" = c("mean" = 0, "var" = 10^2),
+#                   "b_pr" = c("mean" = 0, "var" = 10^2),
+#                   "b_pl" = c("mean" = 0, "var" = 10^2))
+
+# since all beta have the same variance we only do it for 
+sim <- within(sim, {
+  defs <- defData(varname = "a", dist = "normal", formula = 0, variance = 1.5^2)
+  v <- 10^2
+  defs <- defData(defs, varname = "b1", dist = "normal", formula = 0, variance = "..v")
+  defs <- defData(defs, varname = "b2", dist = "normal", formula = 0, variance = "..v")
+  defs <- defData(defs, varname = "b3", dist = "normal", formula = 0, variance = "..v")
+  defs <- defData(defs, varname = "b4", dist = "normal", formula = 0, variance = "..v")
+  defs <- defData(defs, varname = "lnk1", dist = "nonrandom", formula = "a + b1",
+                  link = "logit")
+  defs <- defData(defs, varname = "lnk2", dist = "nonrandom", formula = "a + b2",
+                  link = "logit")
+  defs <- defData(defs, varname = "lnk3", dist = "nonrandom", formula = "a + b3",
+                  link = "logit")
+  defs <- defData(defs, varname = "lnk4", dist = "nonrandom", formula = "a + b4",
+                  link = "logit")
+  data1 <- genData(n = n, dtDefs = defs) %>%
+    mutate(model = "sd = 10",
+           p1 = inv_logit_scaled(lnk1),
+           p2 = inv_logit_scaled(lnk2),
+           p3 = inv_logit_scaled(lnk3),
+           p4 = inv_logit_scaled(lnk4)) %>%
+    mutate(diff = abs(p1 - p2))
+  
+  v <- 0.5^2
+  updateDef(defs, changevar = "b1", newvariance = "..v")
+  updateDef(defs, changevar = "b2", newvariance = "..v")
+  updateDef(defs, changevar = "b3", newvariance = "..v")
+  updateDef(defs, changevar = "b4", newvariance = "..v")
+  data2 <- genData(n = n, dtDefs = defs) %>%
+    mutate(model = "sd = 0.5",
+           p1 = inv_logit_scaled(lnk1),
+           p2 = inv_logit_scaled(lnk2),
+           p3 = inv_logit_scaled(lnk3),
+           p4 = inv_logit_scaled(lnk4)) %>%
+    mutate(diff = abs(p1 - p2))
+  data <- rbind(data1, data2)
+  })
+# str(sim$data)
+
+ggplot(sim$data, aes(x = diff, color = model)) +
+  geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
+  scale_color_manual(values = c("orange", "mediumseagreen")) +
+  ggthemes::theme_gdocs() +
+  theme(legend.position = "none",
+        ) +
+  labs(title = "Prior diff between treatments",
+       subtitle = "Simulation with simstudy",
+       x = "prior diff between treatments", y = NULL)
+```
+
+
+
 
 #### The full model
 
