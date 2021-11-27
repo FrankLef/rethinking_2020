@@ -849,7 +849,7 @@ The fit with intercept only
 
 ```{r}
 a_file <- here::here("fits", "b11_09.rds")
-# b11.9 <- readRDS(a_file)
+b11.9 <- readRDS(a_file)
 # b11.9 <- brm(data = dataKline,
 #              family = poisson,
 #              formula = total_tools ~ 1,
