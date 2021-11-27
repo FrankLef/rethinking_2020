@@ -771,6 +771,7 @@ for $\alpha_{cid[i]}$.
 Using our prior for $\alpha_{cid[i]}$ wwe simulate $\beta_{cid[i]}$. We show the 
 simulation on the natural scale as it is much easier to understand
 
+
 ```{r}
 p <- list(nlines = 50)
 # p$pop_log <- seq_range(x = log(dataKline$population), n = 10)
@@ -848,8 +849,8 @@ The fit with intercept only
 
 ```{r}
 a_file <- here::here("fits", "b11_09.rds")
-b11.9 <- readRDS(a_file)
-# b11.9 <- brm(data = d,
+# b11.9 <- readRDS(a_file)
+# b11.9 <- brm(data = dataKline,
 #              family = poisson,
 #              formula = total_tools ~ 1,
 #              prior = c(prior(normal(3, 0.5), class = Intercept)),
@@ -864,7 +865,7 @@ and the model with the interaction between population and contact
 ```{r}
 a_file <- here::here("fits", "b11_10.rds")
 b11.10 <- readRDS(a_file)
-# b11.10 <- brm(data = d,
+# b11.10 <- brm(data = dataKline,
 #              family = poisson,
 #              formula = bf(total_tools ~ a + b * log_pop_s,
 #                           a + b ~ 0 + cid,
@@ -900,85 +901,80 @@ loo::loo(b11.10) %>% loo::pareto_k_table()
 and the details are
 
 ```{r}
-tibble(culture = d$culture,
-       k = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
-  arrange(desc(k)) %>% 
+df <- tibble(culture = dataKline$culture,
+       ParetoK = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
+  arrange(desc(ParetoK)) %>% 
   mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+df
+# append k value to data
+dataKline <- dataKline %>%
+  inner_join(df, by = "culture")
+stopifnot(!any(is.na(dataKline)))
 ```
 
-**which shows that Hawai is the outlier and is very influential**.
+**which shows that Hawaii is the outlier and is very influential**.
 
 #### Plotting the posterior
 
 ```{r}
-b11.10_seq <-
-  distinct(d, cid) %>% 
-  expand(cid, 
-         log_pop_s = seq(from = -4.5, to = 2.5, length.out = 100))
-b11.10_fitted <- 
-  fitted(b11.10,
-         newdata = b11.10_seq,
-         probs = c(.055, .945)) %>%
-  data.frame() %>%
-  bind_cols(b11.10_seq)
-```
+samples <- list()
+samples <- within(samples, {
+  newdata <- dataKline %>%
+    distinct(cid) %>%
+    expand(cid, log_pop_s = seq_range(dataKline$log_pop_s, n = 20, pretty = TRUE))
+  data <- epred_draws(b11.10, newdata = newdata)
+  stats <- data %>%
+    select(cid, log_pop_s, .epred) %>%
+    ggdist::mean_qi(.width = 0.89) %>%
+    as.data.frame() %>%
+    mutate(population = log_pop_s * sd(log(dataKline$population)) + 
+             mean(log(dataKline$population)),
+           population = round(exp(population), 0))
+})
+# str(samples$data)
+# samples$stats
 
 
-
-```{r}
-cultures <- c("Hawaii", "Tonga", "Trobriand", "Yap")
-
-p1 <- ggplot(b11.10_fitted, aes(x = log_pop_s, group = cid, color = cid)) +
-  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
-              stat = "identity",
-              alpha = 1/4, size = 1/2) +
-  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
-             aes(y = total_tools, size = pareto_k),
-             alpha = 4/5) +
-  ggrepel::geom_text_repel(data =
-                    bind_cols(d, b11.10$criteria$loo$diagnostics) %>%
-                    filter(culture %in% cultures) %>%
-                    mutate(label = paste(culture, "(", round(pareto_k, digits = 2), ")")),
-                  aes(y = total_tools, label = label),
-                  size = 3, seed = 11, color = "black", family = "Times") +
-  coord_cartesian(xlim = range(b11.10$data$log_pop_s),
-                  ylim = c(0, 80)) +
-  ggthemes::theme_clean() +
-  theme(legend.position = "none") +
-  labs(x = "log population (std)",
-       y = "total tools")
-# p1
-```
-
-```{r}
-p2 <-
-  b11.10_fitted %>%
-  mutate(population = exp((log_pop_s * sd(log(d$population))) + mean(log(d$population)))) %>% 
-
-  ggplot(aes(x = population, group = cid, color = cid)) +
-  geom_smooth(aes(y = Estimate, ymin = Q5.5, ymax = Q94.5, fill = cid),
-              stat = "identity",
-              alpha = 1/4, size = 1/2) +
-  geom_point(data = bind_cols(d, b11.10$criteria$loo$diagnostics),
-             aes(y = total_tools, size = pareto_k),
-             alpha = 4/5) +
-  scale_x_continuous("population", breaks = c(0, 50000, 150000, 250000)) +
-  coord_cartesian(xlim = range(d$population),
-                  ylim = c(0, 80)) +
-  ggthemes::theme_clean() +
-  theme(legend.position = "none") +
-  labs(y = "total tools")
-# p2
-```
-
-
-and the 2 plots together
-
-```{r}
-p1 + p2 +
-  plot_annotation(title = "Posterior predictions for Oceanic Tools model",
+p <- list()
+p$log <- ggplot(dataKline,
+                aes(x = log_pop_s, y = total_tools, color = cid)) +
+  geom_smooth(samples$stats,
+              mapping = aes(x = log_pop_s, y = .epred, ymin = .lower,
+                            ymax = .upper, fill = cid, color = cid),
+              inherit.aes = FALSE, stat = "identity") +
+  geom_point(aes(size = ParetoK), show.legend = FALSE) +
+  ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
+  scale_size_continuous() +
+  theme_ggdist() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.2, 0.8)) +
+  labs(x = "log population (std)")
+# p$log
+p$nat <- ggplot(dataKline,
+                aes(x = population, y = total_tools, color = cid)) +
+  geom_smooth(samples$stats,
+              mapping = aes(x = population, y = .epred, ymin = .lower,
+                            ymax = .upper, fill = cid, color = cid),
+              inherit.aes = FALSE, stat = "identity") +
+  geom_point(aes(size = ParetoK), show.legend = FALSE) +
+  ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number(scale = 0.001)) +
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
+  scale_size_continuous() +
+  theme_ggdist() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.2, 0.8)) +
+  labs(x = "population in thousands")
+# p$nat
+wrap_plots(p$log, p$nat) +
+  plot_annotation(title = "Posterior fitted values for Oceanic Tools model",
                   subtitle = "Model b11.10 - Size of points is the paretor_k factor")
 ```
+
 
 #### Overthinking: Modeling tool innovation
 
@@ -1015,12 +1011,13 @@ total\_tools_i &\sim \mathcal{Poisson}(\lambda_i) \\
 \end{align*}
 $$
 
-and the fit
+and the fit, **see identity in poisson(link = "identity")**, this is important
+and read warning from Kurtz on this.
 
 ```{r}
 a_file <- here::here("fits", "b11_11.rds")
 b11.11 <- readRDS(a_file)
-# b11.11 <- brm(data = d, 
+# b11.11 <- brm(data = dataKline,
 #       family = poisson(link = "identity"),
 #       bf(total_tools ~ exp(a) * population^b / g,
 #          a + b ~ 0 + cid,
@@ -1037,16 +1034,59 @@ summary(b11.11)
 ```
 
 
+```{r}
+samples <- list()
+samples <- within(samples, {
+  newdata <- dataKline %>%
+    distinct(cid) %>%
+    expand(cid, population = seq_range(dataKline$population, n = 20, pretty = TRUE))
+  data <- epred_draws(b11.11, newdata = newdata)
+  stats <- data %>%
+    select(cid, population, .epred) %>%
+    ggdist::mean_qi(.width = 0.89)
+})
+# str(samples$data)
+# samples$stats
+
+
+p$science <- ggplot(dataKline,
+                aes(x = population, y = total_tools, color = cid)) +
+  geom_smooth(samples$stats,
+              mapping = aes(x = population, y = .epred, ymin = .lower,
+                            ymax = .upper, fill = cid, color = cid),
+              inherit.aes = FALSE, stat = "identity") +
+  geom_point(aes(size = ParetoK), show.legend = FALSE) +
+  ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number(scale = 0.001)) +
+  # scale_y_continuous(limits = c(0, 200)) +
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
+  scale_size_continuous() +
+  # coord_cartesian(ylim = c(0, 150)) +
+  theme_ggdist() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.2, 0.8)) +
+  labs(title = "Fitted values with the scientific model",
+       subtitle = "model b11.11",
+       x = "population in thousands")
+p$science
+```
+
+
+
+
 #### final model comparison
 
 ```{r}
 loo::loo_compare(b11.9, b11.10, b11.11, criterion = "loo") %>%
   print(simplify = FALSE)
 ```
-So the model b11.11 is slightly better.  Note however that its difference form
-model b11.10 is with the standard deviation.
+So the model b11.11 is slightly better.  Note however that the difference
+is well within the standard deviation so that we can actually say that the
+2 are as accurate.  The scientific model is more interpretable nonetheless.
 
-and the model weights.
+And the model weights.
 
 
 ```{r}
@@ -1137,22 +1177,17 @@ $$
 \lambda_{monastery[1]} &= \exp{(\alpha + \beta)}
 \end{align*}
 $$
-with the posterior values
+
+and the results are
 
 ```{r}
-glimpse(posterior_samples(b11.12))
-```
-
-
-
-```{r}
-posterior_samples(b11.12) %>%
+as_draws_df(b11.12) %>%
   mutate(lambda_old = exp(b_Intercept),
          lambda_new = exp(b_Intercept + b_monastery)) %>%
   pivot_longer(starts_with("lambda"), names_to = "monastery") %>% 
   mutate(monastery = factor(monastery, levels = c("lambda_old", "lambda_new"))) %>%
   group_by(monastery) %>%
-  mean_hdi(value, .width = .89) %>% 
+  mean_qi(value, .width = .89) %>% 
   mutate(across(.cols = where(is.double), .fns = round, digits = 2))
 ```
 
@@ -1162,7 +1197,7 @@ posterior_samples(b11.12) %>%
 
 **Important**: It is important to read @kurtz2020b in this section because
 * McElreath seems to have obtained the wrong results
-* Kurtz gives a significantly more details and explanations
+* Kurtz gives significantly more details and explanations
 
 
 $$
