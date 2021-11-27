@@ -5,7 +5,9 @@ library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
 library(loo)
+library(modelr)
 library(simstudy)
+library(posterior)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -29,12 +31,12 @@ Load the data
 
 ```{r}
 data(chimpanzees)
-d <- chimpanzees %>%
+dataChimp <- chimpanzees %>%
   mutate(actor = factor(actor),
          treatment = factor(1 + prosoc_left + 2 * condition, levels = 1:4,
-                            labels = c("a/r", "a/l", "p/r", "p/l"), ordered = TRUE))
+                            labels = c("AR", "AL", "PR", "PL")))
 rm(chimpanzees)
-skimr::skim(d)
+skimr::skim(dataChimp)
 ```
 
 We have added the variable `treatment` that is a
@@ -42,9 +44,9 @@ code for `prosoc_left` and `condition` variables with the following meanings
 
 
 ```{r}
-d %>%
+dataChimp %>%
   distinct(prosoc_left, condition, treatment) %>%
-  mutate(ldescription = c("Alone and two food items on the right",
+  mutate(description = c("Alone and two food items on the right",
                          "Alone and two food items on the left",
                          "Partner and two food items on the right",
                          "Partner and two food items on the left"))
@@ -92,7 +94,7 @@ c(10, 1.5)
 ```{r}
 a_file <- here::here("fits", "b11_01.rds")
 b11.1 <- readRDS(file = a_file)
-# b11.1 <- brm(data = d,
+# b11.1 <- brm(data = dataChimp,
 #               family = binomial,
 #               formula = pulled_left | trials(1) ~ 1,
 #               prior = c(
@@ -127,7 +129,7 @@ $$
 ```{r}
 a_file <- here::here("fits", "b11_01b.rds")
 b11.1b <- readRDS(file = a_file)
-# b11.1b <- brm(data = d,
+# b11.1b <- brm(data = dataChimp,
 #               family = binomial,
 #               formula = pulled_left | trials(1) ~ 1,
 #               prior = c(
@@ -148,9 +150,9 @@ and we visualize the outcome using the prior samples
 
 ```{r}
 samples <- list()
-samples$data1 <- data.frame(model = "sd = 10",
+samples$data1 <- data.frame(model = "sd=10",
                             intercept = prior_draws(b11.1))
-samples$data2 <- data.frame(model = "sd = 1.5",
+samples$data2 <- data.frame(model = "sd=1.5",
                             intercept = prior_draws(b11.1b))
 samples <- within(samples, {
   data <- bind_rows(data1, data2) %>%
@@ -248,7 +250,7 @@ We get the fit with $sd = 10$
 ```{r}
 a_file <- here::here("fits", "b11_02.rds")
 b11.2 <- readRDS(file = a_file)
-# b11.2 <- brm(data = d,
+# b11.2 <- brm(data = dataChimp,
 #               family = binomial,
 #               formula = bf(pulled_left | trials(1) ~ a + b,
 #                            a ~ 1,
@@ -275,7 +277,7 @@ then the fit with $sd = 0.5$
 ```{r}
 a_file <- here::here("fits", "b11_03.rds")
 b11.3 <- readRDS(file = a_file)
-# b11.3 <- brm(data = d,
+# b11.3 <- brm(data = dataChimp,
 #               family = binomial,
 #               formula = bf(pulled_left | trials(1) ~ a + b,
 #                            a ~ 1,
@@ -298,9 +300,9 @@ brms::inv_logit_scaled(fixef(b11.3))
 
 ```{r}
 samples <- list()
-samples$data1 <- data.frame(model = "sd = 10",
+samples$data1 <- data.frame(model = "sd=10",
                             intercept = prior_draws(b11.2))
-samples$data2 <- data.frame(model = "sd = 0.5",
+samples$data2 <- data.frame(model = "sd=0.5",
                             intercept = prior_draws(b11.3))
 samples <- within(samples, {
   data1 <- data1 %>%
@@ -348,20 +350,20 @@ sim <- within(sim, {
   defs <- defData(defs, varname = "b2", dist = "normal", formula = 0, variance = "..v")
   defs <- defData(defs, varname = "b3", dist = "normal", formula = 0, variance = "..v")
   defs <- defData(defs, varname = "b4", dist = "normal", formula = 0, variance = "..v")
-  defs <- defData(defs, varname = "lnk1", dist = "nonrandom", formula = "a + b1",
+  defs <- defData(defs, varname = "linpred1", dist = "nonrandom", formula = "a + b1",
                   link = "logit")
-  defs <- defData(defs, varname = "lnk2", dist = "nonrandom", formula = "a + b2",
+  defs <- defData(defs, varname = "linpred2", dist = "nonrandom", formula = "a + b2",
                   link = "logit")
-  defs <- defData(defs, varname = "lnk3", dist = "nonrandom", formula = "a + b3",
+  defs <- defData(defs, varname = "linpred3", dist = "nonrandom", formula = "a + b3",
                   link = "logit")
-  defs <- defData(defs, varname = "lnk4", dist = "nonrandom", formula = "a + b4",
+  defs <- defData(defs, varname = "linpred4", dist = "nonrandom", formula = "a + b4",
                   link = "logit")
   data1 <- genData(n = n, dtDefs = defs) %>%
-    mutate(model = "sd = 10",
-           p1 = inv_logit_scaled(lnk1),
-           p2 = inv_logit_scaled(lnk2),
-           p3 = inv_logit_scaled(lnk3),
-           p4 = inv_logit_scaled(lnk4)) %>%
+    mutate(model = "sd=10",
+           p1 = inv_logit_scaled(linpred1),
+           p2 = inv_logit_scaled(linpred2),
+           p3 = inv_logit_scaled(linpred3),
+           p4 = inv_logit_scaled(linpred4)) %>%
     mutate(diff = abs(p1 - p2))
   
   v <- 0.5^2
@@ -370,11 +372,11 @@ sim <- within(sim, {
   updateDef(defs, changevar = "b3", newvariance = "..v")
   updateDef(defs, changevar = "b4", newvariance = "..v")
   data2 <- genData(n = n, dtDefs = defs) %>%
-    mutate(model = "sd = 0.5",
-           p1 = inv_logit_scaled(lnk1),
-           p2 = inv_logit_scaled(lnk2),
-           p3 = inv_logit_scaled(lnk3),
-           p4 = inv_logit_scaled(lnk4)) %>%
+    mutate(model = "sd=0.5",
+           p1 = inv_logit_scaled(linpred1),
+           p2 = inv_logit_scaled(linpred2),
+           p3 = inv_logit_scaled(linpred3),
+           p4 = inv_logit_scaled(linpred4)) %>%
     mutate(diff = abs(p1 - p2))
   data <- rbind(data1, data2)
   })
@@ -392,8 +394,6 @@ ggplot(sim$data, aes(x = diff, color = model)) +
 ```
 
 
-
-
 #### The full model
 
 Now that we have investigated the prior, let's do the full model with them
@@ -407,13 +407,18 @@ logit(p_i) &= \alpha_{actor[i]} + \beta_{treatment[i]} \\
 \beta_k &\sim \mathcal{N}(0, 0.5)
 \end{align*}
 $$
-
+We use `brms::brm()` in  aslightly different way than @kurtz2020b. Kurtz create
+distinct priors for every category of treatment.  This is justified by his
+desire to get the prior data in a separate column for every prior.  We don't
+need to do this when using `simstudy` to evaluate the priors.  One huge
+advantage when doing it this way is that we can now use the full power
+of `tidybayes` which makes the visualization of indexed parameters much easier.
 
 
 ```{r}
 a_file <- here::here("fits", "b11_04.rds")
 b11.4 <- readRDS(file = a_file)
-# b11.4 <- brm(data = d,
+# b11.4 <- brm(data = dataChimp,
 #               family = binomial,
 #               formula = bf(pulled_left | trials(1) ~ a + b,
 #                            a ~ 0 + actor,
@@ -421,81 +426,83 @@ b11.4 <- readRDS(file = a_file)
 #                            nl = TRUE),
 #               prior = c(
 #                 prior(normal(0, 1.5), nlpar = a),
-#                 prior(normal(0, 0.5), nlpar = b, coef = treatment1),
-#                 prior(normal(0, 0.5), nlpar = b, coef = treatment2),
-#                 prior(normal(0, 0.5), nlpar = b, coef = treatment3),
-#                 prior(normal(0, 0.5), nlpar = b, coef = treatment4)
+#                 prior(normal(0, 0.5), nlpar = b)
 #                 ),
 #              cores = detectCores(), seed = 11)
 # b11.4 <- brms::add_criterion(b11.4, criterion = c("waic", "loo"))
 # saveRDS(b11.4, file = a_file)
 summary(b11.4)
-brms::inv_logit_scaled(fixef(b11.4))
 ```
 
-```{r}
-get_variables(b11.4)
-```
 
-for the coefficients related to actors we have
+and to obtain the coeficients on the logit scale
 
 ```{r}
-# NOTE: do not do actors and treatments together because of inv_logit_scaled
-df <- posterior_samples(b11.4) %>%
-  select(starts_with("b_a_")) %>%
-  pivot_longer(cols = everything(), names_to = "actor") %>%
-  mutate(prob = brms::inv_logit_scaled(value),
-         id = factor(gsub(pattern = "^b_a_", replacement = "", x = actor))) %>%
-  group_by(id) %>%
-  ggdist::mean_qi(prob, .width = 0.95)
-# glimpse(df)
+samples <- list()
+samples$newdata <- dataChimp %>%
+  expand(actor, treatment)
+samples$data <- as_draws(b11.4, newdata = samples$newdata) %>%
+  as_draws_df()
+# glimpse(samples$data)
 
 
-ggplot(df, aes(x = prob, y = id)) +
-  geom_pointintervalh(color = "darkgreen") +
-  ggrepel::geom_text_repel(aes(label = round(prob, 2)), size = 3) +
-  # theme_minimal() +
+samples$stats <- samples$data %>%
+  select(-c("lp__", ".chain", ".iteration", ".draw")) %>%
+  pivot_longer(cols = everything(), names_to = "var") %>%
+  mutate(var = sub(pattern = "b_a_|b_b_", replacement = "", x = var)) %>%
+  filter(grepl(pattern = "actor", x = var)) %>%
+  mutate(value = gtools::inv.logit(value)) %>%
+  group_by(var) %>%
+  ggdist::mean_qi()
+# glimpse(samples$stats)
+# tail(samples$stats)
+
+p <- list()
+p$actor <- samples$stats %>% 
+  ggplot(aes(x = value, xmin = .lower, xmax = .upper, y = var)) +
+  geom_pointinterval(color = "darkgreen", size = 2, fatten_point = 3) +
+  geom_vline(xintercept = 0, color = "grey60") +
+  ggrepel::geom_text_repel(mapping = aes(label = round(value, 2))) +
   ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue")
-        ) +
-  labs(title = "probability (logistic / inv_logit) coefficient for actors",
+  theme(title = element_text(color = "midnightblue")) +
+  labs(title = "Coefficients for actors",
        subtitle = "Model b11.4",
-       x = "probability / proportion of time", y = NULL)
-```
+       x = "probability", y = NULL)
+# p$actor
 
-and for treatment
 
-```{r}
-get_variables(b11.4)
-```
+# the treatment are kept on the logit scale
+samples$stats <- samples$data %>%
+  select(-c("lp__", ".chain", ".iteration", ".draw")) %>%
+  pivot_longer(cols = everything(), names_to = "var") %>%
+  mutate(var = sub(pattern = "b_a_|b_b_", replacement = "", x = var)) %>%
+  filter(grepl(pattern = "treat", x = var)) %>%
+  mutate(var = case_when(
+    var == "treatment1" ~ "AR",
+    var == "treatment2" ~ "AL",
+    var == "treatment3" ~ "PR",
+    var == "treatment4" ~ "PL",
+    TRUE ~ as.character(var)
+  )) %>%
+  group_by(var) %>%
+  ggdist::mean_qi()
+# samples$stats
 
-```{r}
-df <- posterior_samples(b11.4) %>%
-  select(starts_with("b_b_")) %>%
-  pivot_longer(cols = everything(), names_to = "treatment") %>%
-  mutate(prob = brms::inv_logit_scaled(value),
-         id = gsub(pattern = "^b_b_", replacement = "", x = treatment),
-         label = case_when(
-           treatment == "b_b_treatment1" ~ "A/R",
-           treatment == "b_b_treatment2" ~ "A/L",
-           treatment == "b_b_treatment3" ~ "P/R",
-           treatment == "b_b_treatment4" ~ "P/L",
-           TRUE ~ as.character(treatment)
-         )) %>%
-  group_by(label) %>%
-  ggdist::mean_qi(value, .width = 0.95)
-# glimpse(df)
-
-ggplot(df, aes(x = value, y = label)) +
-  geom_pointintervalh(color = "goldenrod") +
-  ggrepel::geom_text_repel(aes(label = round(value, 2)), size = 3) +
+p$treat <- samples$stats %>% 
+  ggplot(., aes(x = value, xmin = .lower, xmax = .upper, y = var)) +
+  geom_pointinterval(color = "orange", size = 2, fatten_point = 3) +
+  geom_vline(xintercept = 0, color = "grey60") +
+  ggrepel::geom_text_repel(mapping = aes(label = round(value, 2))) +
   ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue")
-        ) +
-  labs(title = "logit coefficient for treatments",
+  theme(title = element_text(color = "midnightblue")) +
+  labs(title = "Coefficients for treatment",
        subtitle = "Model b11.4",
        x = "logit", y = NULL)
+# p$treat
+
+wrap_plots(p, ncol = 1)
 ```
+
 
 
 to compare the models
@@ -514,36 +521,37 @@ and the coefficient plot is
 
 ```{r}
 ggplot(w, aes(x = reorder(model, waic), color = model)) +
-  geom_pointrange(aes(y = waic, ymin = waic - se_waic, ymax = waic+ se_waic)) +
-  coord_flip() +
+  geom_pointinterval(aes(x = waic, xmin = waic - se_waic, xmax = waic + se_waic, y = model),
+                     size = 2, fatten_point = 3) +
+  ggrepel::geom_text_repel(aes(x = waic, y = model, label = waic)) +
   ggthemes::theme_clean() +
   theme(legend.position = "none") +
-  labs(title = "WAIC", y = "deviance", x = "model")
+  labs(title = "WAIC intervals", y = "model", x = "waic")
 ```
 
 
 ### Relative shark and absolute deer
 
 ```{r}
-posterior_samples(b11.4) %>% 
-  mutate(proportional_odds = exp(b_b_treatment4 - b_b_treatment2)) %>% 
+as_draws_df(b11.4) %>%
+  mutate(proportional_odds = exp(b_b_treatmentAR - b_b_treatmentPR)) %>% 
   mean_qi(proportional_odds)
 ```
 
 On average the switch from treatment 2 to treatment 4 multiply the odds of pulling
-tthe left lever by 92%.
+the left lever by 92%.
 
 > The risk of focusing on relative effects, such as proportional odds, is that
 they aren't enough to tell enough whether a variable is important or not.
 
-See the ovethinking box in section 11.1.2, p. 337.
+See the overthinking box in section 11.1.2, p. 337.
 
 ### Aggregated binomial: Chimpanzees again
 
 
 ```{r}
-d.aggr <- d %>%
-  group_by(treatment, actor, side, cond) %>%
+d.aggr <- dataChimp %>%
+  group_by(treatment, actor, prosoc_left, condition) %>%
   summarise(left_pulls = sum(pulled_left)) %>%
   ungroup()
 d.aggr
@@ -578,11 +586,11 @@ often not the case.
 
 ```{r}
 data(UCBadmit)
-d <- UCBadmit %>%
+dataAdmit <- UCBadmit %>%
   mutate(gid = factor(applicant.gender, levels = c("male", "female")),
          case = seq_len(nrow(.)))
 rm(UCBadmit)
-skimr::skim(d)
+skimr::skim(dataAdmit)
 ```
 
 
@@ -600,7 +608,7 @@ and we fit the model
 ```{r}
 a_file <- here::here("fits", "b11_07.rds")
 b11.7 <- readRDS(a_file)
-# b11.7 <- brm(data = d, 
+# b11.7 <- brm(data = dataAdmit,
 #       family = binomial,
 #       admit | trials(applications) ~ 0 + gid,
 #       prior(normal(0, 1.5), class = b),
@@ -608,8 +616,20 @@ b11.7 <- readRDS(a_file)
 # b11.7 <- brms::add_criterion(b11.7, criterion = c("waic", "loo"))
 # saveRDS(b11.7, file = a_file)
 summary(b11.7)
-brms::inv_logit_scaled(fixef(b11.7))
 ```
+
+and we compute the contrast between male and female
+
+```{r}
+as_draws_df(b11.7) %>%
+  mutate_variables(diff_a = b_gidmale - b_gidfemale,
+                   diff_b = gtools::inv.logit(b_gidmale) - gtools::inv.logit(b_gidfemale)) %>%
+  select(diff_a, diff_b) %>%
+  pivot_longer(cols = everything(), names_to = "var") %>%
+  group_by(var) %>%
+  skimr::skim()
+```
+
 
 
 
@@ -628,10 +648,10 @@ and we fit the model
 ```{r}
 a_file <- here::here("fits", "b11_08.rds")
 b11.8 <- readRDS(a_file)
-# b11.8 <- brm(data = d, 
+# b11.8 <- brm(data = dataAdmit,
 #       family = binomial,
 #       bf(admit | trials(applications) ~ a + d,
-#          a ~ 0 + gid, 
+#          a ~ 0 + gid,
 #          d ~ 0 + dept,
 #          nl = TRUE),
 #       prior = c(prior(normal(0, 1.5), nlpar = a),
@@ -640,8 +660,21 @@ b11.8 <- readRDS(a_file)
 # b11.8 <- brms::add_criterion(b11.8, criterion = c("waic", "loo"))
 # saveRDS(b11.8, file = a_file)
 summary(b11.8)
-brms::inv_logit_scaled(fixef(b11.8))
+# brms::inv_logit_scaled(fixef(b11.8))
 ```
+
+and aain we compute the contrast between male and female
+
+```{r}
+as_draws_df(b11.8) %>%
+  mutate_variables(diff_a = b_a_gidmale - b_a_gidfemale,
+                   diff_b = gtools::inv.logit(b_a_gidmale) - gtools::inv.logit(b_a_gidfemale)) %>%
+  select(diff_a, diff_b) %>%
+  pivot_longer(cols = everything(), names_to = "var") %>%
+  group_by(var) %>%
+  skimr::skim()
+```
+
 
 
 ## Poisson regression
@@ -658,12 +691,12 @@ $$
 
 ```{r}
 data(Kline)
-d <- Kline %>%
+dataKline <- Kline %>%
   mutate(log_pop_s = log(population),
          log_pop_s = as.vector(scale(log_pop_s)),
          cid = factor(contact, levels = c("low", "high")))
 rm(Kline)
-skimr::skim(d)
+skimr::skim(dataKline)
 ```
 
 
@@ -679,69 +712,125 @@ $$
 
 #### Calibrating the priors
 
+
+
+```{r}
+# sim <- list()
+# within(sim, {
+#   defs <- 
+#   
+#   
+#   
+#   
+# })
+```
+
+
+
+
+
 > Source: https://ggplot2.tidyverse.org/reference/geom_function.html
 
-For the intercept $\alpha_j$ we try
+For the intercept $\alpha_j$. If $\alpha_j$ is normal then we know that
+$\lambda_j$ is lognormal distributed.
 
 
 ```{r}
-# source: https://ggplot2.tidyverse.org/reference/geom_function.html
-dist1 <- c("meanlog" = 0, "sdlog" = 10)
-dist2 <- c("meanlog" = 3, "sdlog" = 0.5)
-p1 <- ggplot(data = data.frame(x = c(0, 100)), aes(x)) +
-  geom_function(fun = dlnorm, n = 201, args = list(meanlog = dist1[1], sdlog = dist1[2]),
-                size = 1/2) +
-  geom_function(fun = dlnorm, n = 201, args = list(meanlog = dist2[1], sdlog = dist2[2]),
-                size = 1/2, color = "blue") +
-  annotate(geom = "text", x = 5, y = 0.06,
-           size = 3, color = "black", hjust = 0, parse = FALSE,
-           label = sprintf("dlnormal(%.1f, %.1f)\n mean = %.1f", 
-                           dist1[1], dist1[2], dist1[1] + exp(dist1[2]^2)/2)) +
-  annotate(geom = "text", x = 35, y = 0.03,
-           size = 3, color = "blue", hjust = 0, parse = FALSE,
-           label = sprintf("dlnormal(%.1f, %.1f)\n mean = %.1f", 
-                           dist2[1], dist2[2], dist2[1] + exp(dist2[2]^2)/2)) +
-  scale_x_continuous(breaks = scales::breaks_width(width = 20)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.01)) +
-  coord_cartesian(xlim = c(0, 100), ylim = c(0, 0.08)) +
-  ggthemes::theme_clean() +
-  labs(title = "Prior distributions",
-       x = expression("mean number of tools" ~ lambda),
-       y = "denisty")
-p1
-```
 
+p <- list()
+# p$specs <- expand.grid("x"= c(0, 100), "meanlog" = c(0, 3, 5), "sdlog" = c(0.5, 5, 10)) %>%
+#   mutate(prior = paste0("meanlog=", meanlog, ", ", "sdlog=", sdlog))
+# p$specs
+p$df <- crossing("meanlog" = c(0, 2, 3), "sdlog" = c(0.5, 1, 2)) %>%
+  expand(nesting(meanlog, sdlog), x = seq(from = 0, to = 100, length.out = 50)) %>%
+  mutate(density = dlnorm(x, meanlog = meanlog, sdlog = sdlog),
+         meanid = factor(paste("meanlog =", meanlog)),
+         sdid = factor(paste("sdlog =", sdlog))) %>%
+  arrange(meanlog, sdlog)
 
-
-For the intercept $\beta_k$ we try
-
-```{r}
-set.seed(11)
-
-# how many lines would you like?
-n <- 100
-
-# simulate and wrangle
-df <- tibble(i = seq_len(n),
-       a = rnorm(n, mean = 3, sd = 0.5)) %>% 
-  mutate(`beta%~%Normal(0*', '*10)`  = rnorm(n, mean = 0 , sd = 10),
-         `beta%~%Normal(0*', '*0.2)` = rnorm(n, mean = 0 , sd = 0.2)) %>% 
-  pivot_longer(contains("beta"),
-               values_to = "b",
-               names_to = "prior") %>% 
-  expand(nesting(i, a, b, prior),
-         x = seq(from = -2, to = 2, length.out = 100))
-  
-  # plot
-ggplot(df, aes(x = x, y = exp(a + b * x), group = i, color = i)) +
-  geom_line(size = 1/4, alpha = 2/3) +
-  scale_color_paletteer_c(palette = "pals::kovesi.linear_ternary_green_0_46_c42") + 
-  coord_cartesian(ylim = c(0, 100)) +
+p$plot <- ggplot(p$df, aes(x = x, y = density, fill = meanid)) +
+  geom_area() +
+  scale_y_continuous(NULL) +
+  scale_fill_paletteer_d("fishualize::Scarus_quoyi", direction = -1) +
+  coord_cartesian(xlim = c(0, 50)) +
   ggthemes::theme_hc() +
-  theme(legend.position = "none") +
-  labs(x = "log population (std)", y = "total tools") +
-  facet_wrap(~ prior, labeller = label_parsed)
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(title = "Prior predictive distribution of the mean (lambda)", 
+       x = NULL, y = NULL) +
+  facet_grid(sdid ~ meanid, scales = "free_y")
+p$plot
 ```
+
+
+Therefore we choose $\alpha_{cid[i]} \sim \mathcal{LogNormal(3, 0.5)}$ as our prior
+for $\alpha_{cid[i]}$.
+
+Using our prior for $\alpha_{cid[i]}$ wwe simulate $\beta_{cid[i]}$. We show the 
+simulation on the natural scale as it is much easier to understand
+
+```{r}
+p <- list(nlines = 50)
+# p$pop_log <- seq_range(x = log(dataKline$population), n = 10)
+p$pop_log <- c(2, floor(max(log(dataKline$population))))
+p <- within(p, {
+  df <- data.frame(
+    id = seq_len(nlines),
+    a = rnorm(nlines, mean = 3, sd = 0.5)) %>%
+    mutate(
+      `beta%~%Normal(0*', '*0.10)`  = rnorm(nlines, mean = 0 , sd = 0.10),
+      `beta%~%Normal(0*', '*0.20)` = rnorm(nlines, mean = 0 , sd = 0.20),
+      `beta%~%Normal(0*', '*0.30)` = rnorm(nlines, mean = 0 , sd = 0.30),
+      `beta%~%Normal(0*', '*0.40)` = rnorm(nlines, mean = 0 , sd = 0.40),
+      `beta%~%Normal(0*', '*0.50)` = rnorm(nlines, mean = 0 , sd = 0.50),
+      `beta%~%Normal(0*', '*0.60)` = rnorm(nlines, mean = 0 , sd = 0.60)
+         ) %>% 
+    pivot_longer(contains("beta"), values_to = "b", names_to = "prior") %>% 
+    expand(nesting(id, a, b, prior),
+           x = seq(from = pop_log[1], to = pop_log[2], length.out = 10))
+})
+# glimpse(p$df)
+
+p$log <- ggplot(p$df, aes(x = x, y = exp(a + b * x), group = id, color = prior)) +
+  geom_line() +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number(accuracy = 1)) +
+  scale_y_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number_auto()) +
+  scale_color_paletteer_d("LaCroixColoR::PassionFruit") +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = "none") +
+  labs(title = "Prior predictive distribution of the mean (lambda)", 
+       x = "population (log)", y = "Tools") +
+  facet_wrap(. ~ prior, labeller = label_parsed)
+p$log
+```
+
+and visulizing on the natural scale which is the best way to understand it
+
+```{r}
+p$nat <- ggplot(p$df, aes(x = exp(x), y = exp(a + b * x), group = id, color = prior)) +
+  geom_line() +
+  geom_hline(yintercept = 100, color = "darkblue", linetype = "dashed", size = 1) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number(accuracy = 1, scale = 0.001)) +
+  scale_y_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number_auto()) +
+  scale_color_paletteer_d("LaCroixColoR::PassionFruit") +
+  coord_cartesian(ylim = c(0, 500)) +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = "none") +
+  labs(title = "Prior predictive distribution of the mean (lambda)", 
+       x = "population in thousands", y = "Tools") +
+  facet_wrap(. ~ prior, labeller = label_parsed)
+p$nat
+```
+
 
 #### Model and fit
 
@@ -816,6 +905,7 @@ tibble(culture = d$culture,
   arrange(desc(k)) %>% 
   mutate(across(.cols = where(is.double), .fns = round, digits = 2))
 ```
+
 **which shows that Hawai is the outlier and is very influential**.
 
 #### Plotting the posterior
