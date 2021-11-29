@@ -5,6 +5,9 @@ library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
 library(loo)
+library(modelr)
+library(simstudy)
+library(posterior)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -31,14 +34,34 @@ $$
 \frac{\Gamma(\alpha+\beta)}{\Gamma(\alpha)\Gamma(\beta)} x^{\alpha -1} (1-x)^{\beta -1} =
 \frac{1}{B(\alpha, \beta)} x^{\alpha -1} (1-x)^{\beta -1}, 0 \leq x \leq 1
 $$
-which is not the format used by McElrath.  He uses the following
-shape parameters wich are much easier to understand as $\mu$ is the **average**
+which is not the format used by McElreath.  He uses the following
+shape parameters which are much easier to understand as $\mu$ is the **average**
 of the distribution and $\kappa$ is the **spread**.
 
 $$
 \mu = \bar{p} = \frac{\alpha}{\alpha + \beta} \\
 \kappa = \theta = \alpha + \beta
 $$
+
+the `simstudy` package provide the function to perform that conversion from
+$mean = \mu$ and $precision = \kappa$ to the shape(mathematical) parameters $\alpha$ and $\beta$ 
+
+```{r}
+paramsMeanKappa <- list(mean = 0.5, kappa = 5)
+paramsShape <- with(paramsMeanKappa, simstudy::betaGetShapes(mean, kappa))
+stopifnot(paramsShape$shape1 == paramsMeanKappa$mean * paramsMeanKappa$kappa,
+          paramsShape$shape2 == (1 - paramsMeanKappa$mean) * paramsMeanKappa$kappa)
+```
+
+and the parameters are used in different `beta` functions but give the same
+result.
+
+```{r}
+dens1 <- with(paramsMeanKappa, rethinking::dbeta2(0.25, mean, kappa))
+dens2 <- with(paramsShape, dbeta(0.25, shape1, shape2))
+stopifnot(dens1 == dens2)
+```
+
 
 and the standard deviation of the beta binomial distribution is
 
@@ -47,25 +70,12 @@ $$
 $$
 
 
-The function to convert from the mean and kappa to the mathematical $\alpha$
-and $\beta$, as provided by Krushke, is
-
-```{r}
-betaABfromMeanKappa <- function(mean, kappa) {
-  stopifnot(mean > 0 & mean < 1)
-  stopifnot(kappa > 0)
-  a <- mean * kappa
-  b <- (1 - mean) * kappa
-  list(a = a, b = b)
-}
-```
-
-
 The beta-binomial distribution is not defined in `brms`.  We need to define the 
 family in ``brms` as well as a `stan_funs()` and `stanvar()`.
 
 ```{r}
-# IMPORTANT: we could have used lb = c(NA, 0) as Brukner does
+# IMPORTANT: we could have used lb = c(NA, 0) as Kurtz does
+#            but McElreath adds 2 to theta
 # see note just below on lb = c(NA, 2)
 beta_binomial2 <- custom_family(
   "beta_binomial2", dpars = c("mu", "phi"),
@@ -86,33 +96,30 @@ stanvars <- stanvar(scode = stan_funs, block = "functions")
 ```
 
 
-> Did you notice `lb = c(NA, 2`^ In Burkner's vignette the lower bound of $\phi$ 
+> Did you notice `lb = c(NA, 2)`? In Burkner's vignette the lower bound of $\phi$ 
 is 0.  Since McElreath wanted the lower bound to 2, we will use lb = 2.
 
-See also McEleath explanation of 2 in section 12.1.1 just before R code 12.1
+See also McElreath explanation of 2 in section 12.1.1 just before R code 12.1
 on p. 371.
 
 
-Variations of rhe beta-binomial distribution using different parameter values
+Variations of the beta-binomial distribution using different parameter values
 can be illustrated as follows
 
 
 ```{r}
-bpdf <- crossing(pbar = c(0.25, 0.5, 0.75), theta = c(5, 15, 30)) %>% 
+p <- list()
+p$df <- crossing(pbar = c(0.25, 0.5, 0.75), theta = c(5, 15, 30)) %>% 
   expand(nesting(pbar, theta), 
          x = seq(from = 0, to = 1, length.out = 100)) %>%
-  mutate(density = rethinking::dbeta2(x, pbar, theta),
+  mutate(shape1 = betaGetShapes(pbar, theta)$shape1,
+         shape2 = betaGetShapes(pbar, theta)$shape2) %>%
+  mutate(density = dbeta(x, shape1, shape2),
          mu = paste("mu", pbar, sep = "=="),
          kappa = paste("kappa", theta, sep = "=="))
-bpdf
-```
 
-and the plot
-
-```{r}
-p <- ggplot(data = bpdf) +
-  geom_ribbon(aes(x = x, ymin = 0, ymax = density),
-              fill = "darkorchid1") + 
+p$plot <- ggplot(data = p$df, aes(x = x, y = density)) +
+  geom_area(fill = "darkorchid1") + 
   scale_y_continuous(NULL, labels = NULL) +
   ggthemes::theme_hc() +
   theme(axis.ticks.y = element_blank(),
@@ -120,10 +127,8 @@ p <- ggplot(data = bpdf) +
   labs(title = "Beta can take many shapes",
        x = "parameter space") +
   facet_grid(kappa~mu, labeller = label_parsed)
-p
+p$plot
 ```
-
-
 
 #### Beta-binomial model
 
@@ -133,9 +138,10 @@ The data used is
 
 ```{r}
 data(UCBadmit)
-d <- UCBadmit %>%
+dataAdmit <- UCBadmit %>%
   mutate(gid = ifelse(applicant.gender == "male", "1", "2"))
 rm(UCBadmit)
+# glimpse(dataAdmit)
 ```
 
 
@@ -153,13 +159,13 @@ logit(\bar{p}_i) &= \alpha_{gid[i]} \\
 $$
 
 
-which we fit as follows
+which we fit as follows, see important note above on `beta_binomial2()`
 
 ```{r}
 a_file <- here::here("fits", "b12_01.rds")
 b12.1 <- readRDS(file = a_file)
 # b12.1 <- brm(
-#   data = d,
+#   data = dataAdmit,
 #   family = beta_binomial2,
 #   admit | vint(applications) ~ 0 + gid,
 #   prior = c(prior(normal(0, 1.5), class = b),
@@ -168,7 +174,7 @@ b12.1 <- readRDS(file = a_file)
 #   stanvars = stanvars,
 #   seed = 12)
 # NOT USED b12.1 <- add_criterion(b12.1, criterion = c("waic", "loo"))
-saveRDS(object = b12.1, file = a_file)
+# saveRDS(object = b12.1, file = a_file)
 ```
 
 with the summary
@@ -181,21 +187,26 @@ summary(b12.1)
 and the posterior data which *represents the distribution rather than the data*
 
 ```{r}
-b12.1_post <- posterior_samples(b12.1)
-glimpse(b12.1_post)
-```
-
-
-and the interval of the difference between the coefficients is
-
-```{r}
-b12.1_post %>%
-  transmute(b_diff = b_gid1 - b_gid2) %>%
-  mean_qi(.width = 0.89) %>%
+samples <- list()
+samples$data <- as_draws_df(b12.1) %>%
+  mutate_variables(a_diff = b_gid1 - b_gid2,
+                   p_gid1 = gtools::inv.logit(b_gid1),
+                   p_gid2 = gtools::inv.logit(b_gid2))
+samples$data %>%
+  summarize_draws("mean", "median", "sd", "mad", 
+                  ~quantile2(.x, probs = c(0.055, 0.945)),
+                  default_convergence_measures()) %>%
+  filter(variable != "lp__") %>%
   mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+
+# stats used in the plot later
+samples$stats <- list(
+  mean_pgid2 = mean(samples$data$p_gid2),
+  mean_phi = mean(samples$data$phi)
+)
 ```
 
-and so, just like McElreath, hthe difference between the admission rates
+and so, just like McElreath, the difference between the admission rates `a_diff`
 is close to zero.
 
 
@@ -206,31 +217,126 @@ See @kurtz2020b for the details
 ```{r}
 set.seed(12)
 
-b12.1_lines <-
-  b12.1_post %>% 
-  mutate(iter  = 1:n(),
-         p_bar = inv_logit_scaled(b_gid2)) %>% 
-  slice_sample(n = 100) %>% 
-  expand(nesting(iter, p_bar, phi),
-         x = seq(from = 0, to = 1, by = .005)) %>% 
-  mutate(density = purrr::pmap_dbl(list(x, p_bar, phi), rethinking::dbeta2))
-
-glimpse(b12.1_lines)
+p <- list()
+p$df <-
+  samples$data %>%
+  slice_sample(n = 100) %>%
+  expand(nesting(.draw, p_gid2, phi),
+         x = seq(from = 0, to = 1, by = .005)) %>%
+  mutate(density = purrr::pmap_dbl(list(x, p_gid2, phi), rethinking::dbeta2))
+glimpse(p$df)
+samples$stats
 ```
 
 ```{r}
-ggplot(b12.1_lines, aes(x = x, y = density)) + 
+ggplot(p$df, aes(x = x, y = density)) + 
   stat_function(fun = rethinking::dbeta2,
-                args = list(prob = mean(inv_logit_scaled(b12.1_post[, "b_gid2"])),
-                            theta = mean(b12.1_post[, "phi"])),
-                size = 1.5, color = "lightblue") +
-  geom_line(aes(group = iter),
+                args = list(prob = samples$stats$mean_pgid2,
+                            theta = samples$stats$mean_phi),
+                size = 1, color = "violetred") +
+  geom_line(aes(group = .draw),
             alpha = .2, color = "darkgreen") +
   scale_y_continuous(breaks = scales::breaks_width(width = 0.5), limits = c(0, 3)) +
   ggthemes::theme_few() +
   theme(panel.background = element_rect(fill = "wheat")) +
   labs(subtitle = "distribution of female admission rates",
        x = "probability admit", y = "density")
+```
+
+
+and for the posterior validation check we need to create funcitions to handle
+predictions and fitted values.  See @kurtz2020b.
+
+
+```{r}
+expose_functions(b12.1, vectorize = TRUE)
+
+# required to use `predict()`
+log_lik_beta_binomial2 <- function(i, prep) {
+  mu     <- prep$dpars$mu[, i]
+  phi    <- prep$dpars$phi
+  trials <- prep$data$vint1[i]
+  y      <- prep$data$Y[i]
+  beta_binomial2_lpmf(y, mu, phi, trials)
+}
+
+posterior_predict_beta_binomial2 <- function(i, prep, ...) {
+  mu     <- prep$dpars$mu[, i]
+  phi    <- prep$dpars$phi
+  trials <- prep$data$vint1[i]
+  beta_binomial2_rng(mu, phi, trials)
+}
+
+# required to use `fitted()`
+posterior_epred_beta_binomial2 <- function(prep) {
+  mu     <- prep$dpars$mu
+  trials <- prep$data$vint1
+  trials <- matrix(trials, nrow = nrow(mu), ncol = ncol(mu), byrow = TRUE)
+  mu * trials
+}
+```
+
+
+
+```{r}
+
+# NOTE: inlcue dept for predicted_draws to work ! i.e. all factors
+# even when not used
+samples$newdata <- dataAdmit %>%
+  distinct(dept, gid, applications, admit)
+  # expand(gid, 
+  #        admit = seq(from = min(dataAdmit$admit) to = , n =10), 
+  #        applications = seq_range(dataAdmit$applications, n = 10))
+# str(samples$newdata)
+# str(dataAdmit)
+
+# str(samples$data)
+# class(samples$newdata)
+# predict(b12.1, newdata = samples$newdata)
+
+# str(b12.1)
+# class(b12.1)
+# samples$predict <- predicted_draws(b12.1, newdata = dataAdmit)
+samples$predict <- predicted_draws(b12.1, newdata = dataAdmit)
+samples$predict
+
+samples$predict_stats <- samples$predict %>%  ggdist::mean_qi(.width = 0.89) %>%
+  mutate(case = seq_len(n()),
+         p = .prediction / applications,
+         p_lower = .lower / applications,
+         p_upper = .upper / applications)
+
+samples$epred <- epred_draws(b12.1, newdata = dataAdmit)
+
+samples$epred_stats <- samples$epred %>%  ggdist::mean_qi(.width = 0.89) %>%
+  mutate(case = seq_len(n()),
+         p = .epred / applications,
+         p_lower = .lower / applications,
+         p_upper = .upper / applications)
+
+
+p <- list()
+p$plot <- ggplot(samples$predict_stats, aes(x = case, y = p)) +
+  geom_linerange(aes(ymin = p_lower, ymax = p_upper),
+                 # color = canva_pal("Green fields")(4)[1], 
+                 size = 2.5, alpha = 1/4) +
+  geom_pointrange(samples$epred_stats,
+                  mapping = aes(x = case, y = p, ymin = p_lower, ymax = p_upper),
+                  # color = canva_pal("Green fields")(4)[4],
+                  size = 1/2, shape = 1) +
+  geom_point(dataAdmit %>% mutate(case = seq_len(n())), 
+             mapping = aes(x = case, y = admit / applications),  
+             size = 2, color = "blue") +
+  scale_x_continuous(breaks = 1:12) +
+  scale_y_continuous(breaks = 0:5 / 5, limits = c(0, 1)) +
+  ggthemes::theme_hc() +
+  theme(axis.ticks.x = element_blank(),
+        legend.position = "none") +
+  labs(Title = "Admission data",
+       subtitle = "Posterior validation check",
+       caption = expression(italic(Note.)*" A = admittance probability"),
+       y = "A")
+p$plot
 ```
 
 
