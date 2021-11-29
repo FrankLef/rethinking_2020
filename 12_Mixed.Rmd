@@ -284,15 +284,6 @@ posterior_epred_beta_binomial2 <- function(prep) {
 # even when not used
 samples$newdata <- dataAdmit %>%
   distinct(dept, gid, applications, admit)
-  # expand(gid, 
-  #        admit = seq(from = min(dataAdmit$admit) to = , n =10), 
-  #        applications = seq_range(dataAdmit$applications, n = 10))
-# str(samples$newdata)
-# str(dataAdmit)
-
-# str(samples$data)
-# class(samples$newdata)
-# predict(b12.1, newdata = samples$newdata)
 
 # str(b12.1)
 # class(b12.1)
@@ -334,8 +325,7 @@ p$plot <- ggplot(samples$predict_stats, aes(x = case, y = p)) +
         legend.position = "none") +
   labs(Title = "Admission data",
        subtitle = "Posterior validation check",
-       caption = expression(italic(Note.)*" A = admittance probability"),
-       y = "A")
+       y = "admittance probability")
 p$plot
 ```
 
@@ -344,7 +334,7 @@ p$plot
 ### Negative-binomial or gamma-Poisson
 
 **You absolutely need to look at the Poisson-lognormal mixture in
-Kurtz's blog [Kurtz blog](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/). 
+Kurtz's blog [Kurtz lognormal](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/). 
 See the added section below.**
 
 #### Gamma-Poisson distribution shape
@@ -374,45 +364,55 @@ $$
 \frac{(\frac{\alpha}{\mu})^\alpha}{\Gamma(\alpha)}
 y^{\alpha-1} \exp{(-\frac{\alpha y}{\mu})}
 $$
-
-
-First we illustrate the gamma-poisson with different combinations of shape $\alpha$ and
-scale $\theta$
-
-Importnat note:  The `dgamma2()` was in the first edition of rethinking
-but not the second edition.  It is shown here only for reference.
-
 ```{r}
-gpdf <- crossing(mu    = c(1, 5, 9), theta = c(1, 5, 9)) %>% 
-  expand(nesting(mu, theta), 
-         x = seq(from = 0, to = 27, length.out = 100)) %>%
-  mutate(density    = rethinking::dgamma2(x, mu, theta),
-         mu_char    = paste("mu", mu, sep = "=="),
-         theta_char = paste("theta", theta, sep = "=="))
-# gpdf
+prm <- gammaGetShapeRate(mean = 5, dispersion = 1.5)
+var <- 5^2 * 1.5
+1 / var
+prm
 ```
 
-and the plot
+In the `dgamma` the shape parameter influence the and rate represents the equivalent
+Poisson $lambda$
 
 ```{r}
-p <- ggplot(data = gpdf) +
-  geom_ribbon(aes(x = x, ymin = 0, ymax = density),
+p <- list()
+p$df <- crossing(shape = c(0.1, 0.5, 1, 2), rate = c(1/10, 1/5, 1/2, 1)) %>%
+  expand(nesting(shape, rate), 
+         x = seq(from = 0, to = 5, by = 0.1)) %>%
+  mutate(density = dgamma(x, shape, rate),
+         shape_char    = paste("shape", shape, sep = "=="),
+         rate_char = paste("rate", rate, sep = "=="))
+# glimpse(p$df)
+```
+
+```{r}
+p$plot <- ggplot(data = p$df %>% filter(shape == 0.1, rate == 0.1)) +
+  geom_area(aes(x = x, y = density),
               fill = "maroon1") +
-  geom_vline(aes(xintercept = mu),
-             color = "maroon", linetype = 3) +
+  scale_y_continuous(NULL, labels = NULL) +
+  labs(title = "Gamma ptior with default (shape = 0.1, rate = 0.1)",
+       x = "parameter space") +
+  ggthemes::theme_hc() +
+  theme(axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey92"))
+p$plot
+```
+
+
+and the plot with different values of sape and rate
+
+```{r}
+p$plot <- ggplot(data = p$df) +
+  geom_area(aes(x = x, y = density), fill = "maroon1") +
   scale_y_continuous(NULL, labels = NULL) +
   labs(title = "Gamma can take many shapes",
-       subtitle = "(dotted vertical lines mark off the means)",
        x = "parameter space") +
-  coord_cartesian(xlim = c(0, 25)) +
   ggthemes::theme_hc() +
   theme(axis.ticks.y = element_blank(),
         plot.background = element_rect(fill = "grey92")) +
-  facet_grid(theta_char~mu_char, labeller = label_parsed)
-p
+  facet_grid(shape_char~rate_char, labeller = label_parsed)
+p$plot
 ```
-
-
 
 
 #### Data
@@ -427,10 +427,11 @@ d <- Kline %>%
 # d
 ```
 
+
 #### Null model
 
 
-Lets do it the right way.  Start with the null model, or as Kurtz call it,
+Lets do it the right way.  Start with the null model, or as Kurtz calls it,
 the intercept-only model
 
 $$
