@@ -279,17 +279,8 @@ posterior_epred_beta_binomial2 <- function(prep) {
 
 
 ```{r}
-
-# NOTE: inlcue dept for predicted_draws to work ! i.e. all factors
-# even when not used
-samples$newdata <- dataAdmit %>%
-  distinct(dept, gid, applications, admit)
-
-# str(b12.1)
-# class(b12.1)
-# samples$predict <- predicted_draws(b12.1, newdata = dataAdmit)
 samples$predict <- predicted_draws(b12.1, newdata = dataAdmit)
-samples$predict
+# samples$predict
 
 samples$predict_stats <- samples$predict %>%  ggdist::mean_qi(.width = 0.89) %>%
   mutate(case = seq_len(n()),
@@ -309,11 +300,9 @@ samples$epred_stats <- samples$epred %>%  ggdist::mean_qi(.width = 0.89) %>%
 p <- list()
 p$plot <- ggplot(samples$predict_stats, aes(x = case, y = p)) +
   geom_linerange(aes(ymin = p_lower, ymax = p_upper),
-                 # color = canva_pal("Green fields")(4)[1], 
-                 size = 2.5, alpha = 1/4) +
+                 size = 2.5, alpha = 1/4, color = "chartreuse4") +
   geom_pointrange(samples$epred_stats,
                   mapping = aes(x = case, y = p, ymin = p_lower, ymax = p_upper),
-                  # color = canva_pal("Green fields")(4)[4],
                   size = 1/2, shape = 1) +
   geom_point(dataAdmit %>% mutate(case = seq_len(n())), 
              mapping = aes(x = case, y = admit / applications),  
@@ -358,39 +347,61 @@ and, also, the gamma distribution can be expressed in terms of mean $\mu$ and
 shape $\alpha$
 
 
-
 $$
 \mathcal{Gamma}(y \mid \mu, \alpha) = 
 \frac{(\frac{\alpha}{\mu})^\alpha}{\Gamma(\alpha)}
 y^{\alpha-1} \exp{(-\frac{\alpha y}{\mu})}
 $$
+To convert from the $\mu = mean$ and $\theta = dispersion= \frac{mean^2}{variance}$
+to the shape and rate parameters we use the function `simstudy::gammaGetShapeRate()`.
+To help us find the mean and dispersion to use with `simstudy::gammaGetShapeRate()`,
+the custom function `gammaGetMeanDispersion` is also defined.  It is the inverse of 
+`simstudy::gammaGetShapeRate()`.
+
+
 ```{r}
-prm <- gammaGetShapeRate(mean = 5, dispersion = 1.5)
-var <- 5^2 * 1.5
-1 / var
-prm
+# custom function which is the inverse function of gammaGetShapeRate()
+gammaGetMeanDispersion <- function(shape, rate) {
+  stopifnot(shape > 0, rate > 0)
+  dispersion <- 1 / shape
+  mean <- shape / rate
+  list("mean" = mean, "dispersion" = dispersion)
+}
+
+# test it
+prm <- list()
+prm <- within(prm, {
+  values <- list(mean = 1, dispersion = 10)
+  # get the shape and rate from the mean and dispersion
+  sr <- gammaGetShapeRate(mean = values$mean, dispersion = values$dispersion)
+  # using the inverse should take you back to the mean and dispersion
+  md <- gammaGetMeanDispersion(shape = sr$shape, rate = sr$shape)
+})
+# using the inverse should take you back to the mean and dispersion
+stopifnot(identical(prm$md, prm$values))
 ```
+
 
 In the `dgamma` the shape parameter influence the and rate represents the equivalent
 Poisson $lambda$
 
 ```{r}
 p <- list()
-p$df <- crossing(shape = c(0.1, 0.5, 1, 2), rate = c(1/10, 1/5, 1/2, 1)) %>%
+p$df <- crossing(shape = c(0.1, 0.25, 0.5, 0.75, 1, 2), 
+                 rate = c(1/10, 1/5, 1/2, 1)) %>%
   expand(nesting(shape, rate), 
-         x = seq(from = 0, to = 5, by = 0.1)) %>%
+         x = seq(from = 0, to = 5, length.out = 100)) %>%
   mutate(density = dgamma(x, shape, rate),
          shape_char    = paste("shape", shape, sep = "=="),
          rate_char = paste("rate", rate, sep = "=="))
-# glimpse(p$df)
 ```
 
 ```{r}
-p$plot <- ggplot(data = p$df %>% filter(shape == 0.1, rate == 0.1)) +
-  geom_area(aes(x = x, y = density),
-              fill = "maroon1") +
+p$plot <- ggplot(data = p$df %>% filter(shape == 0.1, rate == 0.1),
+                 aes(x = x, y = density)) +
+  geom_area(fill = "orchid") +
   scale_y_continuous(NULL, labels = NULL) +
-  labs(title = "Gamma ptior with default (shape = 0.1, rate = 0.1)",
+  labs(title = "Gamma prior with default values (shape = 0.1, rate = 0.1)",
        x = "parameter space") +
   ggthemes::theme_hc() +
   theme(axis.ticks.y = element_blank(),
@@ -402,15 +413,20 @@ p$plot
 and the plot with different values of sape and rate
 
 ```{r}
-p$plot <- ggplot(data = p$df) +
-  geom_area(aes(x = x, y = density), fill = "maroon1") +
+p$plot <- ggplot(data = p$df, aes(x = x, y = density, color = rate_char)) +
+  geom_line(size = 1) +
   scale_y_continuous(NULL, labels = NULL) +
+  scale_color_paletteer_d("ggthemes::excel_Atlas") +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        axis.text.x = element_text(size = rel(0.8)),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey90"),
+        legend.title = element_blank(),
+        legend.background = element_rect(fill = "grey90")) +
   labs(title = "Gamma can take many shapes",
        x = "parameter space") +
-  ggthemes::theme_hc() +
-  theme(axis.ticks.y = element_blank(),
-        plot.background = element_rect(fill = "grey92")) +
-  facet_grid(shape_char~rate_char, labeller = label_parsed)
+  facet_wrap(. ~ shape_char, scales = "free_y", labeller = label_parsed)
 p$plot
 ```
 
@@ -420,19 +436,20 @@ p$plot
 
 ```{r}
 data(Kline)
-d <- Kline %>%
+dataKline <- Kline %>%
   mutate(population_ls = scale(log(population)),
          contact_id = ifelse(contact == "high", 2L, 1L),
          cid = contact)
-# d
 ```
 
 
-#### Null model
+#### Null model {-}
 
+> This section is important as it serves to evaluate the prior to use
+for the full model.  See how @kurtz2020b does it.  My work below does not
+show everything (yet).
 
-Lets do it the right way.  Start with the null model, or as Kurtz calls it,
-the intercept-only model
+Start with the null model, or as Kurtz calls it, the intercept-only model.
 
 $$
 \begin{align*}
@@ -446,27 +463,90 @@ $$
 and the fit
 
 ```{r}
-a_file <- here::here("fits", "b12_02null.rds")
-b12.2null <- readRDS(file = a_file)
-# b12.2null <- brm(data = d, 
+a_file <- here::here("fits", "b12_02a.rds")
+b12.2a <- readRDS(file = a_file)
+# b12.2a <- brm(data = dataKline,
 #       family = negbinomial,
 #       total_tools ~ 1,
 #       prior = c(prior(normal(3, 0.5), class = Intercept),  # beta_0
 #                 prior(gamma(0.01, 0.01), class = shape)),  # alpha
 #       cores = detectCores(),
 #       seed = 12)
-# b12.2null <- add_criterion(b12.2null, criterion = c("waic", "loo"))
-# saveRDS(object = b12.2null, file = a_file)
+saveRDS(object = b12.2a, file = a_file)
 ```
 
 
 with the summary
 
 ```{r}
-summary(b12.2null)
+summary(b12.2a)
 ```
 
-#### Full model
+Because the model has only the intercept and no predictor, there is only
+one value for the Intercept which is the mean of the 10 possion rates 
+$\lambda_i, i =1,...10$.
+
+The $alpha$ is simply the $shape$ parameter of gamma ... and does not really
+describe anything.  It is really used to define the shape of the distribution.
+
+And the prediciton plots show that the distributions all use the same rate and 
+shape.
+
+```{r}
+samples <- list()
+samples$data <- predicted_draws(b12.2a, newdata = dataKline)
+ggplot(samples$data, aes(.prediction, color = culture)) +
+  geom_density(size = 1) +
+  scale_y_continuous(NULL, labels = NULL) +
+  scale_color_paletteer_d("ggthemes::calc") +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        axis.text.x = element_text(size = rel(0.8)),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey90"),
+        legend.position = "none",
+        legend.background = element_rect(fill = "grey90"),
+        strip.background = element_rect(fill = "bisque"),
+        strip.text = element_text(color = "midnightblue")) +
+  labs(title = "Predictive distributions",
+       x = "total tools") +
+  facet_wrap(. ~ culture)
+```
+
+
+and we can also visualize the distributions of our $rate$ and $shape$ parameters
+
+```{r}
+samples <- list()
+samples$data <- as_draws_df(b12.2a) %>%
+  select(b_Intercept, shape) %>%
+  mutate(mu = exp(b_Intercept),
+         theta = mu / shape) %>%
+  select(mu, shape, theta) %>%
+  pivot_longer(cols = everything())
+# str(samples$data)
+ggplot(samples$data, aes(value, fill = name, color = name)) +
+  geom_density(geom = "area") +
+  scale_y_continuous(NULL, labels = NULL) +
+  scale_fill_paletteer_d("fishualize::Scarus_quoyi") +
+  scale_color_paletteer_d("fishualize::Scarus_quoyi") +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        axis.text.x = element_text(size = rel(0.8)),
+        axis.ticks.y = element_blank(),
+        plot.background = element_rect(fill = "grey90"),
+        legend.position = "none",
+        legend.background = element_rect(fill = "grey90"),
+        strip.background = element_rect(fill = "wheat"),
+        strip.text = element_text(color = "midnightblue")) +
+  labs(title = "Posterior distributions of rate and shape",
+       x = NULL) +
+  facet_wrap(. ~ name, scales = "free")
+```
+
+
+
+#### Full model {-}
 
 
 
@@ -484,9 +564,9 @@ $$
 
 
 ```{r}
-a_file <- here::here("fits", "b12_02.rds")
-b12.2 <- readRDS(file = a_file)
-# b12.2 <- brm(data = d, 
+a_file <- here::here("fits", "b12_02b.rds")
+b12.2b <- readRDS(file = a_file)
+# b12.2b <- brm(data = dataKline,
 #       family = negbinomial(link = "identity"),
 #       bf(total_tools ~ exp(b0) * population^b1 / g,
 #          b0 + b1 ~ 0 + cid,
@@ -499,21 +579,50 @@ b12.2 <- readRDS(file = a_file)
 #       cores = detectCores(),
 #       seed = 12,
 #       control = list(adapt_delta = .95))
-# b12.2 <- add_criterion(b12.2, criterion = c("waic", "loo"))
-# saveRDS(object = b12.2, file = a_file)
+# saveRDS(object = b12.2b, file = a_file)
 ```
 
 and the summary
 
 ```{r}
-summary(b12.2)
+summary(b12.2b)
+```
+
+and the fitted values are
+
+```{r}
+samples <- list()
+samples$data <- epred_draws(b12.2b, newdata = dataKline) %>%
+  select(-c(".row", ".chain", ".iteration", ".draw"))
+  # pivot_longer(cols = everything(), names)
+str(samples$data)
+  
+  
+# ggplot(samples$data, aes(value, fill = name, color = name)) +
+#   geom_density(geom = "area") +
+#   scale_y_continuous(NULL, labels = NULL) +
+#   scale_fill_paletteer_d("fishualize::Scarus_quoyi") +
+#   scale_color_paletteer_d("fishualize::Scarus_quoyi") +
+#   ggthemes::theme_hc() +
+#   theme(title = element_text(color = "midnightblue"),
+#         axis.text.x = element_text(size = rel(0.8)),
+#         axis.ticks.y = element_blank(),
+#         plot.background = element_rect(fill = "grey90"),
+#         legend.position = "none",
+#         legend.background = element_rect(fill = "grey90"),
+#         strip.background = element_rect(fill = "wheat"),
+#         strip.text = element_text(color = "midnightblue")) +
+#   labs(title = "Posterior distributions of rate and shape",
+#        x = NULL) +
+#   facet_wrap(. ~ name, scales = "free")
 ```
 
 
-### Poisson-lognormal
+
+### Poisson-lognormal {-}
 
 This is an extra section.  The result is so useful it is worth adding here. See
-[Kurtz blog](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/).
+[Kurtz lognormal](https://solomonkurz.netlify.app/post/2021-07-12-got-overdispersion-try-observation-level-random-effects-with-the-poisson-lognormal-mixture/).
 
 it was also saved in a local file called **Poisson-lognormal_mixture_Solomon Kurz.html**
 in **C:\Users\Public\MyStudies\Rethinking_docs**
@@ -751,6 +860,7 @@ b12.4 %>%
 #   fixef() %>%
 #   stats::plogis()
 ```
+
 **Important:** The SD i.e. `Est.Error` are not valid using the `inv_logit_scaled`,
 that is using a direct inverse exp function.
 

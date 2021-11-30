@@ -33,6 +33,12 @@ paletteer::palettes_d_names$palette[paletteer::palettes_d_names$package == "LaCr
 tmp$pal <- paletteer::paletteer_d("ggthemes::Classic_Cyclic")
 scales::show_col(tmp$pal)
 
+tmp$pal <- paletteer::paletteer_d("ggthemes::manyeys")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("ggthemes::Traffic")
+scales::show_col(tmp$pal)
+
 tmp$pal <- paletteer::paletteer_d("ggthemes::stata_economist")
 scales::show_col(tmp$pal)
 
@@ -42,7 +48,7 @@ scales::show_col(tmp$pal)
 tmp$pal <- paletteer::paletteer_d("LaCroixColoR::PommeBaya")
 scales::show_col(tmp$pal)
 
-tmp$pal <- paletteer::paletteer_d("awtools::a_palette")
+tmp$pal <- paletteer::paletteer_d("awtools::ppalette")
 scales::show_col(tmp$pal)
 
 tmp$pal <- paletteer::paletteer_d("pals::alphabet")
