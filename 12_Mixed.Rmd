@@ -437,9 +437,11 @@ p$plot
 ```{r}
 data(Kline)
 dataKline <- Kline %>%
-  mutate(population_ls = scale(log(population)),
-         contact_id = ifelse(contact == "high", 2L, 1L),
-         cid = contact)
+  mutate(log_pop_s = log(population),
+         log_pop_s = as.vector(scale(log_pop_s)),
+         cid = factor(contact, levels = c("low", "high")))
+rm(Kline)
+skimr::skim(dataKline)
 ```
 
 
@@ -472,6 +474,7 @@ b12.2a <- readRDS(file = a_file)
 #                 prior(gamma(0.01, 0.01), class = shape)),  # alpha
 #       cores = detectCores(),
 #       seed = 12)
+# b12.2a <- brms::add_criterion(b12.2a, criterion = c("waic", "loo"))
 saveRDS(object = b12.2a, file = a_file)
 ```
 
@@ -579,7 +582,10 @@ b12.2b <- readRDS(file = a_file)
 #       cores = detectCores(),
 #       seed = 12,
 #       control = list(adapt_delta = .95))
-# saveRDS(object = b12.2b, file = a_file)
+# we have to be careful when using waic with gamma-Poisson
+# but in this case we do it. We use t in the plot.
+# b12.2b <- brms::add_criterion(b12.2b, criterion = c("waic", "loo"))
+saveRDS(object = b12.2b, file = a_file)
 ```
 
 and the summary
@@ -588,35 +594,97 @@ and the summary
 summary(b12.2b)
 ```
 
+add the *pareto k* for use in the plot later
+
+
+```{r}
+# append k value to data
+dataKline <- dataKline %>%
+  mutate(ParetoK = b12.2b$criteria$loo$diagnostics$pareto_k)
+stopifnot(!any(is.na(dataKline)))
+
+dataKline %>%
+  select(culture, ParetoK) %>%
+  arrange(desc(ParetoK))
+```
+
+
 and the fitted values are
 
 ```{r}
-samples <- list()
-samples$data <- epred_draws(b12.2b, newdata = dataKline) %>%
-  select(-c(".row", ".chain", ".iteration", ".draw"))
-  # pivot_longer(cols = everything(), names)
-str(samples$data)
+fitted <- list()
+fitted <- within(fitted, {
+  newdata <- dataKline %>%
+  distinct(cid, culture) %>%
+  expand(nesting(cid, culture), 
+         population = seq_range(dataKline$population, n = 20, pretty = TRUE))
   
+  data <- epred_draws(b12.2b, newdata = newdata) %>%
+    as.data.frame()
   
-# ggplot(samples$data, aes(value, fill = name, color = name)) +
-#   geom_density(geom = "area") +
-#   scale_y_continuous(NULL, labels = NULL) +
-#   scale_fill_paletteer_d("fishualize::Scarus_quoyi") +
-#   scale_color_paletteer_d("fishualize::Scarus_quoyi") +
-#   ggthemes::theme_hc() +
-#   theme(title = element_text(color = "midnightblue"),
-#         axis.text.x = element_text(size = rel(0.8)),
-#         axis.ticks.y = element_blank(),
-#         plot.background = element_rect(fill = "grey90"),
-#         legend.position = "none",
-#         legend.background = element_rect(fill = "grey90"),
-#         strip.background = element_rect(fill = "wheat"),
-#         strip.text = element_text(color = "midnightblue")) +
-#   labs(title = "Posterior distributions of rate and shape",
-#        x = NULL) +
-#   facet_wrap(. ~ name, scales = "free")
+  stats <- data %>%
+    select(cid, population, .epred) %>%
+    group_by(cid, population) %>%
+    ggdist::mean_qi(.width = 0.89)
+})
+  
+p <- list()
+p$poisgamma <- ggplot(dataKline,
+                aes(x = population, y = total_tools, color = cid, size = ParetoK)) +
+  geom_smooth(fitted$stats,
+              mapping = aes(x = population, y = .epred, ymin = .lower,
+                            ymax = .upper, fill = cid, color = cid),
+              inherit.aes = FALSE, stat = "identity") +
+  geom_point(show.legend = FALSE) +
+  ggrepel::geom_text_repel(aes(label = culture), size = 3) +
+  scale_x_continuous(breaks = scales::breaks_extended(n = 5),
+                     labels = scales::label_number(scale = 0.001)) +
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
+  scale_size_continuous() +
+  # coord_cartesian(ylim = c(0, 100)) +
+  theme_ggdist() +
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.2, 0.85)) +
+  labs(title = "Fitted values with the gamma-Poisson model",
+       subtitle = "model b12.2b",
+       x = "population in thousands")
+p$poisgamma
 ```
 
+the main difference now is that since we use predictor $cid$ then the parameter
+$rate = b_0$ of the gamma distribution used to determined the $\lambda_i$ is 
+allowed to vary by $cid$. Therefore we have different distribution possible
+by $cid$ and can change the distribution by culture as follows.
+
+
+```{r}
+predict <- list()
+predict <- within(predict, {
+  newdata <- dataKline %>%
+  distinct(cid, culture) %>%
+  expand(nesting(cid, culture), 
+         population = seq_range(dataKline$population, n = 20, pretty = TRUE))
+  
+  data <- predicted_draws(b12.2b, newdata = newdata) %>%
+    as.data.frame()
+})
+# str(predict$data)
+
+ggplot(predict$data, aes(x = .prediction, color = cid, fill = cid)) +
+  geom_density() +
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  scale_color_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
+  coord_cartesian(xlim = c(0, 200)) +
+  ggthemes::theme_hc() +
+  theme(title = element_text(color = "midnightblue"),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank()) +
+  labs(title = "Predictive distributions by culture colored by cid",
+       subtitle = "model b12.2b", x = "total tools", y = NULL) +
+  facet_wrap(. ~ culture)
+```
 
 
 ### Poisson-lognormal {-}
@@ -629,11 +697,17 @@ in **C:\Users\Public\MyStudies\Rethinking_docs**
 
 ## Zero-inflated outcomes
 
+> Make sure you read this section in @kurtz2020b. It is loaded with very
+useful informations. Especially when using `brms`.
+
 
 ### Zero-inflated Poisson
 
+This tpe oof model is called a *hurdle model* in the literature. This type of
+model has served me very well in the context of business. 
+
 With zero-inflated Poisson both parameters $p$ and $\lambda$ can have their own
-equation such as
+equation.
 
 
 $$
@@ -645,36 +719,41 @@ log(\lambda_i) &= \alpha_\lambda + \beta_\lambda x_i \\
 $$
 
 
+We use `simstudy` to simulate this.
+
 
 ```{r}
-drink_prob <- 0.2  # drink 20% of the days
-work_rate <- 1  # production = 1 manuscript per day
-
-# simulate 1 year of drinking
-set.seed(365)  # same seed as McElreath
-drink <- rbinom(n = 365, size = 1, prob = drink_prob)
-# simulate 1 year of work
-# set.seed(365)
-work <- rpois(n = length(drink), lambda = work_rate)
-# simulate production
-prod <- (1 - drink) * work
-
-# create the dataframe
-d <- data.frame(
-  drink = factor(drink, levels = 1:0),
-  prod = prod
-  )
+sim <- list()
+sim <- within(sim, {
+  defs <- defData(varname = "drink", dist = "categorical", formula = "0.8;0.2")
+  defs <- defData(defs, varname = "work", dist = "poisson", formula = 1)
+  defs <- defData(defs, varname = "output", dist = "nonrandom", 
+                  formula ="(2 - drink) * work")
+  data <- genData(n = 365, dtDefs = defs)
+  data <- genFactor(data, varname = "drink", labels = c("drinkNot", "drink"))
+})
+dataMonastery <- as.data.frame(sim$data)
 ```
 
 
 plot the data
 
 ```{r}
-ggplot(d, aes(x = prod)) +
-  geom_histogram(aes(fill = drink), binwidth = 1) +
-  scale_fill_manual(values = paletteer::paletteer_d("ggthemr::fresh", direction = -1)) +
-  ggthemes::theme_tufte()
+ggplot(dataMonastery, aes(x = output)) +
+  geom_histogram(aes(fill = fdrink), binwidth = 1) +
+  scale_fill_paletteer_d("khroma::vibrant") +
+  stat_bin(aes(y = ..count.., label = ifelse(..count.., ..count.., "")), 
+           geom = "text", color = "black", vjust = -0.5) +
+  ggthemes::theme_tufte()+
+  theme(legend.position = c(0.8, 0.8),
+        legend.title = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(title = "Frequency of monastery's output",
+       subtitle = sprintf("output for %d days", nrow(sim$data)),
+       y = "nb of days")
 ```
+
 #### Model and fit
 
 $$
@@ -688,21 +767,21 @@ log(\lambda) &= \alpha_\lambda \\
 $$
 
 In `brms`, $p_i$ is denoted `zi`. To use a non-default prior for `zi`, make
-sure to indicate `class = zi`. **Important to read [Kurtz](kurtz2020b)**
+sure to indicate `class = zi`. **Important to read @kurtz2020b**.
 
 
 ```{r}
 a_file <- here::here("fits", "b12_03.rds")
 b12.3 <- readRDS(file = a_file)
-# b12.3 <- brm(data = d, 
+# b12.3 <- brm(data = dataMonastery,
 #       family = zero_inflated_poisson,
-#       prod ~ 1,
+#       output ~ 1,
 #       prior = c(prior(normal(1, 0.5), class = Intercept),
 #                 prior(beta(2, 6), class = zi)),  # the brms default is beta(1, 1)
 #       cores = detectCores(),
-#       seed = 12) 
+#       seed = 12)
 # b12.3 <- add_criterion(b12.3, criterion = c("waic", "loo"))
-# saveRDS(object = b12.3, file = a_file)
+saveRDS(object = b12.3, file = a_file)
 ```
 
 
@@ -712,12 +791,23 @@ and the summary
 summary(b12.3)
 ```
 
-with $\alpha_\lambda$ on natural scale being
+The intercept represents $\lambda$ on the log scale, because the link function
+for $\lambda$. This can be confirm by looking at the summary which shows
+**Links: mu = log; zi = identity**.
+
+We observe that this is the actual rate of our simulaiton with
+`defData(defs, varname = "work", dist = "poisson", formula = 1)`.
 
 ```{r}
 fixef(b12.3)
-exp(fixef(b12.3))
+exp(fixef(b12.3)[, "Estimate"])
 ```
+When using `brms` the parameter $zi$ has link function *identity* as evidenced 
+in the summary by **Links: mu = log; zi = identity**. In this case we have
+obtained $zi = 0.20$ which is close enough to McEleath's estimate of 0.23.
+
+We observe that this is the actual rate of our simulation with
+`defData(varname = "drink", dist = "categorical", formula = "0.8;0.2")`.
 
 
 ## Ordered categorical outcomes

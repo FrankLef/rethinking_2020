@@ -713,22 +713,6 @@ $$
 #### Calibrating the priors
 
 
-
-```{r}
-# sim <- list()
-# within(sim, {
-#   defs <- 
-#   
-#   
-#   
-#   
-# })
-```
-
-
-
-
-
 > Source: https://ggplot2.tidyverse.org/reference/geom_function.html
 
 For the intercept $\alpha_j$. If $\alpha_j$ is normal then we know that
@@ -898,18 +882,17 @@ above
 loo::loo(b11.10) %>% loo::pareto_k_table()
 ```
 
-and the details are
+and we add the *pareto k* to the data
 
 ```{r}
-df <- tibble(culture = dataKline$culture,
-       ParetoK = b11.10$criteria$loo$diagnostics$pareto_k) %>% 
-  arrange(desc(ParetoK)) %>% 
-  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
-df
 # append k value to data
 dataKline <- dataKline %>%
-  inner_join(df, by = "culture")
+  mutate(ParetoK = round(b11.10$criteria$loo$diagnostics$pareto_k, 1))
 stopifnot(!any(is.na(dataKline)))
+
+dataKline %>%
+  select(culture, ParetoK) %>%
+  arrange(desc(ParetoK))
 ```
 
 **which shows that Hawaii is the outlier and is very influential**.
@@ -944,14 +927,10 @@ p$log <- ggplot(dataKline,
               inherit.aes = FALSE, stat = "identity") +
   geom_point(aes(size = ParetoK), show.legend = FALSE) +
   ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
-  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
-  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
-  scale_size_continuous() +
-  theme_ggdist() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.2, 0.8)) +
-  labs(x = "log population (std)")
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(x = "population in standardized log")
 # p$log
+
 p$nat <- ggplot(dataKline,
                 aes(x = population, y = total_tools, color = cid)) +
   geom_smooth(samples$stats,
@@ -960,17 +939,18 @@ p$nat <- ggplot(dataKline,
               inherit.aes = FALSE, stat = "identity") +
   geom_point(aes(size = ParetoK), show.legend = FALSE) +
   ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
+  coord_cartesian(ylim = c(0, 100)) +
   scale_x_continuous(breaks = scales::breaks_extended(n = 5),
                      labels = scales::label_number(scale = 0.001)) +
-  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
-  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
-  scale_size_continuous() +
-  theme_ggdist() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.2, 0.8)) +
   labs(x = "population in thousands")
 # p$nat
-wrap_plots(p$log, p$nat) +
+
+wrap_plots(p$log, p$nat) &
+  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) &
+  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) &
+  theme_ggdist() &
+  theme(title = element_text(color = "midnightblue"),
+        legend.position = c(0.2, 0.90)) &
   plot_annotation(title = "Posterior fitted values for Oceanic Tools model",
                   subtitle = "Model b11.10 - Size of points is the paretor_k factor")
 ```

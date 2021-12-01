@@ -30,6 +30,14 @@ paletteer::palettes_d_names$palette[paletteer::palettes_d_names$package == "Manu
 paletteer::palettes_d_names$palette[paletteer::palettes_d_names$package == "calecopal"]
 paletteer::palettes_d_names$palette[paletteer::palettes_d_names$package == "LaCroixColoR"]
 
+
+tmp$pal <- paletteer::paletteer_d("ggthemes::Classic_Traffic_Light")
+scales::show_col(tmp$pal)
+
+# khroma has a lot of very good stuff . . .favorite^
+tmp$pal <- paletteer::paletteer_d("khroma::vibrant")
+scales::show_col(tmp$pal)
+
 tmp$pal <- paletteer::paletteer_d("ggthemes::Classic_Cyclic")
 scales::show_col(tmp$pal)
 
