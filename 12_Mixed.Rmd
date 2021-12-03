@@ -791,23 +791,33 @@ and the summary
 summary(b12.3)
 ```
 
-The intercept represents $\lambda$ on the log scale, because the link function
+and we generate a summary with `posterior::summarize_draws`
+
+```{r}
+samples <- list()
+samples$data <- as_draws(b12.3) %>%
+  mutate_variables(lambda = exp(b_Intercept))
+samples$stats <- samples$data %>%
+  summarize_draws() %>%
+  filter(variable != "lp__") %>%
+  mutate(across(.cols = where(is.numeric), round, digits = 2))
+samples$stats
+```
+
+The $b_Intercept$ represents $\lambda$ on the log scale, because the link function
 for $\lambda$. This can be confirm by looking at the summary which shows
 **Links: mu = log; zi = identity**.
 
-We observe that this is the actual rate of our simulaiton with
+We observe that $lambda$ matches the actual rate of our simulaiton with
 `defData(defs, varname = "work", dist = "poisson", formula = 1)`.
 
-```{r}
-fixef(b12.3)
-exp(fixef(b12.3)[, "Estimate"])
-```
 When using `brms` the parameter $zi$ has link function *identity* as evidenced 
 in the summary by **Links: mu = log; zi = identity**. In this case we have
 obtained $zi = 0.20$ which is close enough to McEleath's estimate of 0.23.
 
-We observe that this is the actual rate of our simulation with
+We observe that $zi$ is the actual rate of our simulation with
 `defData(varname = "drink", dist = "categorical", formula = "0.8;0.2")`.
+
 
 
 ## Ordered categorical outcomes

@@ -18,7 +18,21 @@ library(paletteer, quietly = TRUE)
 ```
 
 
+
 # Counting and Classification {#Counting}
+
+We set the current theme used for plotting
+
+```{r}
+theme_set(
+  ggthemes::theme_tufte(base_size = 11, base_family = "sans", ticks = TRUE) +
+  theme(title = element_text(color = "midnightblue"),
+        panel.grid.major  = element_blank(),
+        panel.grid.minor  = element_blank(),
+        plot.background = element_rect(fill = "gainsboro", color = NA))
+  )
+```
+
 
 
 
@@ -162,8 +176,7 @@ samples <- within(samples, {
 
 ggplot(samples$data, aes(x = p, color = model)) +
   geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
-  scale_color_manual(values = c("orange", "mediumseagreen")) +
-  ggthemes::theme_gdocs() +
+  scale_color_paletteer_d("khroma::contrast") +
   theme(legend.position = c(0.5, 0.8)) +
   labs(title = "Prior density of pulled_left",
        subtitle = "Model 11.1 and 11.1b",
@@ -214,9 +227,7 @@ p$df <- rbind(data.frame(sim$data1, "model" = "sd = 10"),
 
 ggplot(p$df, aes(x = p, color = model)) +
   geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
-  scale_color_manual(values = c("orange", "mediumseagreen")) +
-  ggthemes::theme_gdocs() +
-  theme(legend.position = "none") +
+  scale_color_paletteer_d("khroma::contrast") +
   labs(title = "Prior density of pulled_left",
        subtitle = "Simulation with simstudy",
        x = "prior prob. of pulled_left", y = NULL)
@@ -322,8 +333,7 @@ samples <- within(samples, {
 
 ggplot(samples$data, aes(x = diff, color = model)) +
   geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
-  scale_color_manual(values = c("orange", "mediumseagreen")) +
-  ggthemes::theme_gdocs() +
+  scale_color_paletteer_d("khroma::contrast") +
   theme(legend.position = c(0.5, 0.8)) +
   labs(title = "Prior density of pulled_left",
        subtitle = "Model 11.1 and 11.1b",
@@ -384,8 +394,7 @@ sim <- within(sim, {
 
 ggplot(sim$data, aes(x = diff, color = model)) +
   geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
-  scale_color_manual(values = c("orange", "mediumseagreen")) +
-  ggthemes::theme_gdocs() +
+  scale_color_paletteer_d("khroma::contrast") +
   theme(legend.position = "none",
         ) +
   labs(title = "Prior diff between treatments",
@@ -463,8 +472,7 @@ p$actor <- samples$stats %>%
   geom_pointinterval(color = "darkgreen", size = 2, fatten_point = 3) +
   geom_vline(xintercept = 0, color = "grey60") +
   ggrepel::geom_text_repel(mapping = aes(label = round(value, 2))) +
-  ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue")) +
+  theme(panel.grid.major.y = element_line(color = "white")) +
   labs(title = "Coefficients for actors",
        subtitle = "Model b11.4",
        x = "probability", y = NULL)
@@ -493,14 +501,14 @@ p$treat <- samples$stats %>%
   geom_pointinterval(color = "orange", size = 2, fatten_point = 3) +
   geom_vline(xintercept = 0, color = "grey60") +
   ggrepel::geom_text_repel(mapping = aes(label = round(value, 2))) +
-  ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue")) +
+  theme(panel.grid.major.y = element_line(color = "white")) +
   labs(title = "Coefficients for treatment",
        subtitle = "Model b11.4",
        x = "logit", y = NULL)
 # p$treat
 
-wrap_plots(p, ncol = 1)
+wrap_plots(p, ncol = 1) &
+  theme(plot.background = element_rect(color = NA))
 ```
 
 
@@ -522,11 +530,13 @@ and the coefficient plot is
 ```{r}
 ggplot(w, aes(x = reorder(model, waic), color = model)) +
   geom_pointinterval(aes(x = waic, xmin = waic - se_waic, xmax = waic + se_waic, y = model),
-                     size = 2, fatten_point = 3) +
+                     size = 4, fatten_point = 4) +
   ggrepel::geom_text_repel(aes(x = waic, y = model, label = waic)) +
-  ggthemes::theme_clean() +
-  theme(legend.position = "none") +
-  labs(title = "WAIC intervals", y = "model", x = "waic")
+  scale_color_paletteer_d("khroma::bright") +
+  # ggthemes::theme_hc() +
+  theme(legend.position = "none",
+        panel.grid.major.y = element_line(color = "white")) +
+  labs(title = "WAIC intervals by model", x = "waic", y = NULL)
 ```
 
 
@@ -554,7 +564,7 @@ d.aggr <- dataChimp %>%
   group_by(treatment, actor, prosoc_left, condition) %>%
   summarise(left_pulls = sum(pulled_left)) %>%
   ungroup()
-d.aggr
+# d.aggr
 ```
 
 ```{r}
@@ -734,14 +744,12 @@ p$df <- crossing("meanlog" = c(0, 2, 3), "sdlog" = c(0.5, 1, 2)) %>%
 
 p$plot <- ggplot(p$df, aes(x = x, y = density, fill = meanid)) +
   geom_area() +
-  scale_y_continuous(NULL) +
-  scale_fill_paletteer_d("fishualize::Scarus_quoyi", direction = -1) +
+  scale_y_continuous(breaks = NULL) +
+  scale_fill_paletteer_d("khroma::vibrant") +
   coord_cartesian(xlim = c(0, 50)) +
-  ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = "none",
+  theme(legend.position = "none",
         axis.text.y = element_blank(),
-        axis.ticks.y = element_blank()) +
+        strip.background = element_rect(fill = "wheat", color = NA)) +
   labs(title = "Prior predictive distribution of the mean (lambda)", 
        x = NULL, y = NULL) +
   facet_grid(sdid ~ meanid, scales = "free_y")
@@ -786,9 +794,10 @@ p$log <- ggplot(p$df, aes(x = x, y = exp(a + b * x), group = id, color = prior))
                      labels = scales::label_number_auto()) +
   scale_color_paletteer_d("LaCroixColoR::PassionFruit") +
   coord_cartesian(ylim = c(0, 500)) +
-  ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = "none") +
+  theme(legend.position = "none",
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        strip.background = element_rect(fill = "wheat", color = NA)) +
   labs(title = "Prior predictive distribution of the mean (lambda)", 
        x = "population (log)", y = "Tools") +
   facet_wrap(. ~ prior, labeller = label_parsed)
@@ -798,18 +807,18 @@ p$log
 and visulizing on the natural scale which is the best way to understand it
 
 ```{r}
+p$hline <- 100
 p$nat <- ggplot(p$df, aes(x = exp(x), y = exp(a + b * x), group = id, color = prior)) +
   geom_line() +
-  geom_hline(yintercept = 100, color = "darkblue", linetype = "dashed", size = 1) +
+  geom_hline(yintercept = p$hline, color = "darkblue", linetype = "dashed", size = 1) +
   scale_x_continuous(breaks = scales::breaks_extended(n = 5),
                      labels = scales::label_number(accuracy = 1, scale = 0.001)) +
-  scale_y_continuous(breaks = scales::breaks_extended(n = 5),
+  scale_y_continuous(breaks = p$hline,
                      labels = scales::label_number_auto()) +
   scale_color_paletteer_d("LaCroixColoR::PassionFruit") +
   coord_cartesian(ylim = c(0, 500)) +
-  ggthemes::theme_hc() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = "none") +
+  theme(legend.position = "none",
+        strip.background = element_rect(fill = "wheat", color = NA)) +
   labs(title = "Prior predictive distribution of the mean (lambda)", 
        x = "population in thousands", y = "Tools") +
   facet_wrap(. ~ prior, labeller = label_parsed)
@@ -928,7 +937,7 @@ p$log <- ggplot(dataKline,
   geom_point(aes(size = ParetoK), show.legend = FALSE) +
   ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
   coord_cartesian(ylim = c(0, 100)) +
-  labs(x = "population in standardized log")
+  labs(x = "standardized population log")
 # p$log
 
 p$nat <- ggplot(dataKline,
@@ -946,11 +955,10 @@ p$nat <- ggplot(dataKline,
 # p$nat
 
 wrap_plots(p$log, p$nat) &
-  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) &
-  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) &
-  theme_ggdist() &
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.2, 0.90)) &
+  scale_color_paletteer_d("khroma::bright") &
+  scale_fill_paletteer_d("khroma::bright") &
+  theme(legend.position = c(0.2, 0.90),
+        plot.background = element_rect(color = NA)) &
   plot_annotation(title = "Posterior fitted values for Oceanic Tools model",
                   subtitle = "Model b11.10 - Size of points is the paretor_k factor")
 ```
@@ -1039,14 +1047,10 @@ p$science <- ggplot(dataKline,
   ggrepel::geom_text_repel(aes(label = paste0(culture, "(", ParetoK, ")")), size = 3) +
   scale_x_continuous(breaks = scales::breaks_extended(n = 5),
                      labels = scales::label_number(scale = 0.001)) +
-  # scale_y_continuous(limits = c(0, 200)) +
-  scale_fill_manual(values = c("low" = "lightblue", "high" = "lightpink")) +
-  scale_color_manual(values = c("low" = "royalblue", "high" = "violetred")) +
+  scale_color_paletteer_d("khroma::bright") +
+  scale_fill_paletteer_d("khroma::bright") +
   scale_size_continuous() +
-  # coord_cartesian(ylim = c(0, 150)) +
-  theme_ggdist() +
-  theme(title = element_text(color = "midnightblue"),
-        legend.position = c(0.2, 0.8)) +
+  theme(legend.position = c(0.2, 0.8)) +
   labs(title = "Fitted values with the scientific model",
        subtitle = "model b11.11",
        x = "population in thousands")
@@ -1114,7 +1118,7 @@ ydays <- rpois(ndays, lambda = 1.5)  # nb of manuscripts per day
 nweeks <- 4
 yweeks <- rpois(nweeks, 0.5*7)  # nb of manuscripts per week
 # create the dataframe with all data
-d <- data.frame(
+dataMonastery <- data.frame(
   nb = c(ydays, yweeks),
   days = c(rep(1, ndays), rep(7, nweeks)),
   monastery = c(rep(0, ndays), rep(1, nweeks))) %>%
@@ -1138,7 +1142,7 @@ and the fit. With `brms` you use the `offset()` funciton.
 ```{r}
 a_file <- here::here("fits", "b11_12.rds")
 b11.12 <- readRDS(a_file)
-# b11.12 <- brm(data = d, 
+# b11.12 <- brm(data = dataMonastery,
 #       family = poisson,
 #       nb ~ 1 + offset(days_lg) + monastery,
 #       prior = c(prior(normal(0, 1), class = Intercept),
@@ -1177,7 +1181,7 @@ as_draws_df(b11.12) %>%
 
 **Important**: It is important to read @kurtz2020b in this section because
 * McElreath seems to have obtained the wrong results
-* Kurtz gives significantly more details and explanations
+* Kurtz gives significantly more details and extrememly important explanations
 
 
 $$
@@ -1203,50 +1207,42 @@ The career are the outcomes.  We now predict the career using a trait of
 the career (outcome itself) which is the income in this case.
 
 ```{r}
-# simulate career choices among 500 individuals
-n <- 500  # number of individuals
-income <- c("1" = 1, "2" = 2, "3" = 5)  # expected income of each career
-# scores for each career, based on income
-score  <- 0.5 * income
-
-
-# next line converts scores to probabilities
-prob <- rethinking::softmax("1" = score[1], "2" = score[2], "3" = score[3])
-
-set.seed(34302)
-# sample chosen career for each individual
-career <- sapply(seq_len(n), function(i) sample(1:3, size = 1, prob = prob))
-# which gives the following frequencies for career = 1, 2, 3
-tabulate(career)
-# which is very close to the theoretical softmax from above
-round(tabulate(career) / n, 3)
-round(prob, 3)
+sim <- list()
+sim <- within(sim, {
+  income <- c(1, 2, 5)
+  score <- 0.5 * income
+  probs <- round(rethinking::softmax(score), 3)
+  stopifnot(sum(probs) == 1)  # verify rounding is ok
+  defs <- defData(varname = "career", dist = "categorical", 
+                  formula = genCatFormula(probs))
+  data <- genData(n = 500, dtDefs = defs)
+})
+dataCareer <- as.data.frame(sim$data)
+# and we validate the results
+tabulate(dataCareer$career) / nrow(dataCareer)
+sim$probs
 ```
 
 and the dataframe is
 
 ```{r}
-d <- data.frame(
-  career = career,
-  income = income[as.character(career)])
-d %>%
+dataCareer %>%
   count(career) %>%
   mutate(pct = 100 * n / sum(n),
          prob = n / sum(n))
-# which is very close to the theoretical softmax from above
-# round(prob, 3)
 ```
 
 and plot the frequency of each career
 
 ```{r}
-ggplot(d, aes(x = as.factor(career))) +
-  geom_bar(aes(y=..count.. / sum(..count..)), fill = "wheat") +
-  ggthemes::theme_few() +
-  labs(x = "career")
+ggplot(dataCareer, aes(x = factor(career), fill = factor(career))) +
+  geom_bar(aes(y=..count.. / sum(..count..))) +
+  scale_fill_paletteer_d("khroma::contrast") +
+  theme(legend.position = "none") +
+  labs(title = "Frequencies of careers",
+       subtitle = sprintf("sample size = %d", nrow(dataCareer)),
+       x = "career", y = "percent")
 ```
-
-
 
 
 #### Scores
@@ -1259,12 +1255,12 @@ For example if you add a constant to the scores from above, you get the same
 softmax
 
 ```{r}
-score_new <- score + 11  # 11 is an arbitrary constant added to the scores
+score_new <- sim$score + 11  # 11 is an arbitrary constant added to the scores
 # compute the new softmax
 exp(score_new) / sum(exp(score_new))
 # which gives the same result and shows that the difference between
 # the scores is what matters
-rethinking::softmax(score)
+rethinking::softmax(score_new)
 ```
 
 #### Model of predictors matched to outcomes
@@ -1318,42 +1314,47 @@ model{
 }
 "
 
-# wrangle the data
+# create data list for Stan
 dat_list <- 
-  list(N = n, 
-       K = 3, 
-       career = career, 
-       career_income = income)
+  list(N = nrow(dataCareer), 
+       K = length(unique(dataCareer$career)), 
+       career = dataCareer$career, 
+       career_income = sim$income)
 
 # fit the model (and save it)
 a_file <- here::here("fits", "m11_13.rds")
 m11.13 <- readRDS(a_file)
-# m11.13 <-
-#   rstan::stan(data = dat_list,
-#        model_code = code_m11.13,
-#        chains = 4)
+# m11.13 <- rstan::stan(data = dat_list, model_code = code_m11.13, chains = 4)
 # saveRDS(m11.13, file = a_file)
 ```
 
 
-and check the summary using `rethinking::precis`
+and we look at the summary
+
+```{r}
+as_draws_df(m11.13) %>%
+  summarize_draws() %>%
+  mutate(across(.cols = where(is.numeric), .fns = function(x) round(x, digits = 2)))
+```
+
+
+and check the summary using `rethinking::precis`. **The result from mcElreath
+are significantly different than what Kurtz (and the above) give**.
 
 Note: although Kurtz results seem to work, they have a high Rhat, just like McElreath
 and warnings about divergent points after warmup are issued.  The effective sizes
-for Kurtz is much lower than the ones from McElreath
+for Kurtz is much lower than the ones from McElreath.
 
-```{r}
-# the results are different than McElreath
-rethinking::precis(m11.13, depth = 2) %>%
-  round(digits = 2)
-```
-The results are different than McEalreath!
+
+> Be aware that the estimates you get from these models are extraordinarily
+difficult to interpret. Since the parameters are relative to the pivot outcome
+value, they could end up positive or negative, depending upon the context. @elreath2020 p. 361.
 
 
 #### Null Model (Intercept-only)
 
-Now modelize step by step to understand what we are doing. As usual we start
-we the model with only the intercept.  In the case of multinomial, since every
+As usual we start we the model with only the intercept.  
+In the case of multinomial, since every
 category is a model in itself, we use an intercept per category.
 
 The 3rd category is the *pivot* and identified as such in the `brm()` function below.
@@ -1364,8 +1365,7 @@ The default of `brm()` is to take the first category as the pivot.
 ```{r}
 a_file <- here::here("fits", "b11_13null.rds")
 b11.13null <- readRDS(a_file)
-# b11.13null <-
-#   brm(data = d, 
+# b11.13null <- brm(data = dataCareer,
 #       family = categorical(link = logit, refcat = 3),
 #       career ~ 1,
 #       prior = c(prior(normal(0, 1), class = Intercept, dpar = mu1),
@@ -1376,68 +1376,94 @@ b11.13null <- readRDS(a_file)
 summary(b11.13null)
 ```
 
-It is important to understand the role of the **pivot category**.  it is simple,
+It is important to understand the role of the **pivot category**.  It is simple,
 the pivot category is used to center the categorical scores.
 
-For example the scores we used so far, when centered with the this category,
+For example the scores we used so far, when centered with his category,
 are as follows
 
 ```{r}
 tibble::tibble(
-  incomes = income,
-  scores = score,
-  rescaled_scores = scores - score["3"]
+  incomes = sim$income,
+  scores = sim$score,
+  rescaled_scores = sim$score - sim$score[3]
 )
 ```
 
-which is the intercepts we obtain with the null model.  This is an easy check
-on the null model.
+**which is the intercepts we obtain with the null model.  This is an easy check
+on the null model.**
 
 Now lets see what the fitted values for the $\mu_{cat}$ are. These fitted values
-correspond to the **softmax** which is the link function.  Note that,
+correspond to the `softmax` which is the link function.  Note that,
 since each category is separate from the other, `fitted` will return a 3-dimension
 array where the 3rd dimension is the category no.
 
 We have 500 rows, just like the original data.  Here we show the result of the first row
 
 ```{r}
-# No newdata used, so the original data is used by fitted
-fitted(b11.13null)[1, , ] %>%
-  round(digits = 2) %>%
-  t()
+fitted <- list()
+fitted <- within(fitted, {
+  newdata <- dataCareer %>%
+    select(career) %>%
+    distinct(career)
+  data <- epred_draws(b11.13null, newdata = newdata) %>%
+    as.data.frame()
+  summ <- data %>% select(.category, .epred) %>% 
+    group_by(.category) %>% 
+    summarize_draws() %>%
+    mutate(across(.cols = where(is.numeric), .fns= ~round(.x, digits = 2)))
+})
+fitted$summ
 ```
+
+2 observations
+
+* the mean are about equal to the original softamx values which is expected
+since we are using the intercept-only model.
+
 and we can see that that the multinomial probability is actually very close
 to the theoretical softmax
 
 
 ```{r}
 tibble::tibble(
-  income = income,
-  score = score,
-  prob = exp(score) / sum(exp(score))
+  income = sim$income,
+  score = sim$score,
+  prob = exp(sim$score) / sum(exp(sim$score))
   ) %>%
   round(digits = 2)
 ```
 
 and using the posterior samples to compute the multinomial probabilities
-we do the following
+we do the following. Note that this will give the same result as
+`epred_draws` since the model has only the intercept.
+
+We observe that, again, it matches the theoretical `softmax`.
 
 ```{r}
-posterior_samples(b11.13null) %>% 
-  mutate(b_mu3_Intercept = 0) %>% 
-  mutate(p1 = exp(b_mu1_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
-         p2 = exp(b_mu2_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
-         p3 = exp(b_mu3_Intercept) / (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept))) %>% 
-  pivot_longer(p1:p3) %>% 
-  group_by(name) %>% 
-  mean_qi(value) %>% 
-  mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+samples <- list()
+samples <- within(samples, {
+  data <- as_draws_df(b11.13null) %>%
+    select(matches("b_mu")) %>%
+    mutate(b_mu3_Intercept = 0) %>%
+      mutate(p1 = exp(b_mu1_Intercept) / 
+               (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
+             p2 = exp(b_mu2_Intercept) / 
+               (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)),
+             p3 = exp(b_mu3_Intercept) / 
+               (exp(b_mu1_Intercept) + exp(b_mu2_Intercept) + exp(b_mu3_Intercept)))
+  summ <- data %>%
+    pivot_longer(p1:p3) %>% 
+    group_by(name) %>% 
+    mean_qi(value) %>% 
+    mutate(across(.cols = where(is.double), .fns = round, digits = 2))
+})
+samples$summ
 ```
-
-which match with the theoretical **softmax**.
 
 > This is an important test to make sure we get our model right before going any
 further.
+
 
 #### Full model
 
@@ -1458,7 +1484,7 @@ and so the model fits are
 ```{r}
 a_file <- here::here("fits", "b11_13a.rds")
 b11.13a <- readRDS(a_file)
-# b11.13a <- brm(data = d, 
+# b11.13a <- brm(data = dataCareer,
 #       family = categorical(link = logit, refcat = 3),
 #       bf(career ~ 1,
 #          nlf(mu1 ~ a1 + b1 * 1),
@@ -1474,7 +1500,7 @@ b11.13a <- readRDS(a_file)
 
 a_file <- here::here("fits", "b11_13b.rds")
 b11.13b <- readRDS(a_file)
-# b11.13b <- brm(data = d, 
+# b11.13b <- brm(data = dataCareer,
 #       family = categorical(link = logit, refcat = 3),
 #       bf(career ~ 1,
 #          nlf(mu1 ~ a1 + b1 * 1),
@@ -1491,8 +1517,7 @@ b11.13b <- readRDS(a_file)
 
 a_file <- here::here("fits", "b11_13c.rds")
 b11.13c <- readRDS(a_file)
-# b11.13c <-
-#   brm(data = d, 
+# b11.13c <- brm(data = dataCareer,
 #       family = categorical(link = logit, refcat = 3),
 #       bf(career ~ 1,
 #          nlf(mu1 ~ a1 + b * 1),
@@ -1507,8 +1532,7 @@ b11.13c <- readRDS(a_file)
 
 a_file <- here::here("fits", "b11_13d.rds")
 b11.13d <- readRDS(a_file)
-# b11.13d <-
-#   brm(data = d, 
+# b11.13d <- brm(data = dataCareer,
 #       family = categorical(link = logit, refcat = 3),
 #       bf(career ~ 1,
 #          nlf(mu1 ~ a1 + b * 1),
@@ -1520,32 +1544,61 @@ b11.13d <- readRDS(a_file)
 #       cores = detectCores(), seed = 11,
 #       control = list(adapt_delta = .99))
 # b11.13d <- add_criterion(b11.13d, criterion = c("waic", "loo"))
-# saveRDS(b11.13d, file = a_file)
+saveRDS(b11.13d, file = a_file)
 ```
 
 and comparing the performance of the models
 
 
 ```{r}
-loo_compare(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %>%
+loo_compare(b11.13a, b11.13b, b11.13c, b11.13d, criterion = "loo") %>%
   print(simplify = FALSE)
 ```
 
-The results are different than Kurtz, this is caused by the facts that the models
+The results are similar to what Kurtz found, this is caused by the facts that the models
 have very similar performance and therefore it doesn't take much to change the ranking.
 Most numbers, e.g. `looic` are similar.
 
 and the model weights
 
 ```{r}
-model_weights(b11.13null, b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>%
+model_weights(b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>%
   round(digits = 2)
 ```
 
 
-
 ### Predictors matched to observations
 
+
+
+```{r}
+# stop("TODO")
+getProbs <- function(x, inc = 0.5 * 1:3, coef = c(-2, 0, 2), digits = 3) {
+  stopifnot(x >= 0, x <= 1)
+  
+  score <- inc + coef * x
+  probs <- rethinking::softmax(score)
+  stopifnot(sum(probs) == 1)
+  out <- round(probs, digits = digits)
+  
+  diff <- 1 - sum(out)
+  if (abs(diff) > 0) out[2] <- out[2] + diff
+  stopifnot(sum(probs) == 1)
+  out
+}
+# getProbs(runif(1))
+
+sim <- list()
+sim <- within(sim, {
+  defs <- defData(varname = "career", dist = "categorical",
+                  formula = genCatFormula(getProbs(runif(1))))
+  data <- genData(n = 500, dtDefs = defs)
+  data <- genFactor(data, varname = "career", labels = paste("career", 1:3))
+})
+# glimpse(sim$data)
+dataCareer <- as.data.frame(sim$data)
+# glimpse(dataCareer)
+```
 
 
 

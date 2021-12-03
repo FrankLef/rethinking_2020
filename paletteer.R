@@ -34,9 +34,45 @@ paletteer::palettes_d_names$palette[paletteer::palettes_d_names$package == "LaCr
 tmp$pal <- paletteer::paletteer_d("ggthemes::Classic_Traffic_Light")
 scales::show_col(tmp$pal)
 
-# khroma has a lot of very good stuff . . .favorite^
+# khroma has a lot of very good stuff . . .favorite?
+
 tmp$pal <- paletteer::paletteer_d("khroma::vibrant")
 scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::discrete_rainbow")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::smooth_rainbow")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::stratigraphy")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::soil")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::okabe_ito")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::contrast")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::vibrant")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::light")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::pale")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::iridescent")
+scales::show_col(tmp$pal)
+
+tmp$pal <- paletteer::paletteer_d("khroma::bright")
+scales::show_col(tmp$pal)
+
+
 
 tmp$pal <- paletteer::paletteer_d("ggthemes::Classic_Cyclic")
 scales::show_col(tmp$pal)
