@@ -51,6 +51,9 @@ scales::show_col(tmp$pal)
 tmp$pal <- paletteer::paletteer_d("khroma::soil")
 scales::show_col(tmp$pal)
 
+tmp$pal <- paletteer::paletteer_d("khroma::land")
+scales::show_col(tmp$pal)
+
 tmp$pal <- paletteer::paletteer_d("khroma::okabe_ito")
 scales::show_col(tmp$pal)
 
