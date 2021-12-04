@@ -1235,13 +1235,21 @@ dataCareer %>%
 and plot the frequency of each career
 
 ```{r}
-ggplot(dataCareer, aes(x = factor(career), fill = factor(career))) +
-  geom_bar(aes(y=..count.. / sum(..count..))) +
+p <- list()
+p$df <- dataCareer %>%
+  count(career) %>%
+  mutate(pct = round(n / sum(n), 3))
+p$df
+ggplot(p$df, aes(x = factor(career), y = pct, fill = factor(career))) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = sprintf("%0.1f%%", 100 * pct)), vjust = 1.25) +
   scale_fill_paletteer_d("khroma::contrast") +
-  theme(legend.position = "none") +
+  theme(legend.position = "none",
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
   labs(title = "Frequencies of careers",
        subtitle = sprintf("sample size = %d", nrow(dataCareer)),
-       x = "career", y = "percent")
+       x = "career", y = NULL)
 ```
 
 
@@ -1290,7 +1298,7 @@ are different
 
 ```{r}
 # define the model
-code_m11.13 <- "
+m11.13_code <- "
 data{
   int N; // number of individuals
   int K; // number of possible careers 
@@ -1324,7 +1332,7 @@ dat_list <-
 # fit the model (and save it)
 a_file <- here::here("fits", "m11_13.rds")
 m11.13 <- readRDS(a_file)
-# m11.13 <- rstan::stan(data = dat_list, model_code = code_m11.13, chains = 4)
+# m11.13 <- rstan::stan(data = dat_list, model_code = m11.13_code, chains = 4)
 # saveRDS(m11.13, file = a_file)
 ```
 
@@ -1390,26 +1398,23 @@ tibble::tibble(
 )
 ```
 
-**which is the intercepts we obtain with the null model.  This is an easy check
-on the null model.**
+And we observe that $mu1_Intercept$ and $mu2_Intercept$ in the summary just above
+are the same as what we just computed **which is the intercepts we obtain 
+with the null model.  This is an easy check on the null model.**
 
 Now lets see what the fitted values for the $\mu_{cat}$ are. These fitted values
-correspond to the `softmax` which is the link function.  Note that,
-since each category is separate from the other, `fitted` will return a 3-dimension
-array where the 3rd dimension is the category no.
+correspond to the `softmax` which is the link function.
 
-We have 500 rows, just like the original data.  Here we show the result of the first row
 
 ```{r}
 fitted <- list()
 fitted <- within(fitted, {
   newdata <- dataCareer %>%
-    select(career) %>%
     distinct(career)
   data <- epred_draws(b11.13null, newdata = newdata) %>%
     as.data.frame()
-  summ <- data %>% select(.category, .epred) %>% 
-    group_by(.category) %>% 
+  summ <- data %>% select(.category, .epred) %>%
+    group_by(.category) %>%
     summarize_draws() %>%
     mutate(across(.cols = where(is.numeric), .fns= ~round(.x, digits = 2)))
 })
@@ -1436,7 +1441,7 @@ tibble::tibble(
 
 and using the posterior samples to compute the multinomial probabilities
 we do the following. Note that this will give the same result as
-`epred_draws` since the model has only the intercept.
+`epred_draws` above since the model has only the intercept.
 
 We observe that, again, it matches the theoretical `softmax`.
 
@@ -1461,6 +1466,7 @@ samples <- within(samples, {
 samples$summ
 ```
 
+
 > This is an important test to make sure we get our model right before going any
 further.
 
@@ -1479,24 +1485,24 @@ crossing(b  = factor(c("b1 & b2", "b"), levels = c("b1 & b2", "b")),
   relocate(fit)
 ```
 
-and so the model fits are
+and so the model fits using different prior of expresion of the `brm` arguments
 
 ```{r}
 a_file <- here::here("fits", "b11_13a.rds")
 b11.13a <- readRDS(a_file)
-# b11.13a <- brm(data = dataCareer,
-#       family = categorical(link = logit, refcat = 3),
-#       bf(career ~ 1,
-#          nlf(mu1 ~ a1 + b1 * 1),
-#          nlf(mu2 ~ a2 + b2 * 2),
-#          a1 + a2 + b1 + b2 ~ 1),
-#       prior = c(prior(normal(0, 1), class = b, nlpar = a1),
-#                 prior(normal(0, 1), class = b, nlpar = a2),
-#                 prior(normal(0, 0.5), class = b, nlpar = b1),
-#                 prior(normal(0, 0.5), class = b, nlpar = b2)),
-#       cores = detectCores(), seed = 11)
-# b11.13a <- add_criterion(b11.13a, criterion = c("waic", "loo"))
-# saveRDS(b11.13a, file = a_file)
+b11.13a <- brm(data = dataCareer,
+      family = categorical(link = logit, refcat = 3),
+      bf(career ~ 1,
+         nlf(mu1 ~ a1 + b1 * 1),
+         nlf(mu2 ~ a2 + b2 * 2),
+         a1 + a2 + b1 + b2 ~ 1),
+      prior = c(prior(normal(0, 1), class = b, nlpar = a1),
+                prior(normal(0, 1), class = b, nlpar = a2),
+                prior(normal(0, 0.5), class = b, nlpar = b1),
+                prior(normal(0, 0.5), class = b, nlpar = b2)),
+      cores = detectCores(), seed = 11)
+b11.13a <- add_criterion(b11.13a, criterion = c("waic", "loo"))
+saveRDS(b11.13a, file = a_file)
 
 a_file <- here::here("fits", "b11_13b.rds")
 b11.13b <- readRDS(a_file)
@@ -1547,6 +1553,38 @@ b11.13d <- readRDS(a_file)
 saveRDS(b11.13d, file = a_file)
 ```
 
+
+and plot the results
+
+```{r}
+p <- list()
+p$df <- data.frame(fit = paste0("b11.13", letters[1:4])) %>% 
+  mutate(fixef = purrr::map(fit, ~get(.) %>% 
+                              fixef() %>%
+                              data.frame() %>% 
+                              tibble::rownames_to_column("parameter"))) %>% 
+  unnest(fixef) %>% 
+  mutate(parameter = sub(pattern = "_Intercept", replacement = "", x = parameter),
+         fit = factor(fit, levels = paste0("b11.13", letters[4:1])),
+         across(.cols = where(is.double), .fns = ~round(.x, 2)))
+glimpse(p$df)
+  
+ggplot(p$df, aes(x = Estimate, xmin = Q2.5, xmax = Q97.5, y = fit, color = parameter)) +
+  geom_vline(xintercept = 0, size = 0.5, color = "midnightblue", linetype = "dotted") +
+  geom_pointinterval(size = 4, fatten_point = 3) +
+  ggrepel::geom_label_repel(mapping = aes(x = Estimate, y = fit, label = Estimate),
+                            size = 3) +
+  scale_color_paletteer_d("khroma::bright") +
+  theme(legend.position = "none",
+        panel.grid.major.y = element_line(color = "white"),
+        axis.ticks.x = element_blank(),
+        axis.text.x = element_blank()) +
+  labs(title = "Parameter values by fit", x = NULL, y = NULL) +
+  facet_wrap(~ parameter, nrow = 1)
+```
+
+
+
 and comparing the performance of the models
 
 
@@ -1567,43 +1605,123 @@ model_weights(b11.13a, b11.13b, b11.13c, b11.13d, weights = "loo") %>%
 ```
 
 
+
+
 ### Predictors matched to observations
 
 
 
 ```{r}
-# stop("TODO")
-getProbs <- function(x, inc = 0.5 * 1:3, coef = c(-2, 0, 2), digits = 3) {
+# generate probabilities from family income
+genProbs <- function(x, coef = c(-2, 0, 2), career = 1:3, income_coef = 0.5) {
   stopifnot(x >= 0, x <= 1)
   
-  score <- inc + coef * x
-  probs <- rethinking::softmax(score)
-  stopifnot(sum(probs) == 1)
-  out <- round(probs, digits = digits)
-  
-  diff <- 1 - sum(out)
-  if (abs(diff) > 0) out[2] <- out[2] + diff
-  stopifnot(sum(probs) == 1)
-  out
+  sapply(x, FUN = function(x) {
+    score <- income_coef * career + coef * x
+    probs <- rethinking::softmax(score)
+    sample(career, size = 1, prob = probs)
+    })
 }
-# getProbs(runif(1))
 
 sim <- list()
 sim <- within(sim, {
-  defs <- defData(varname = "career", dist = "categorical",
-                  formula = genCatFormula(getProbs(runif(1))))
+  defs <- defData(varname = "family_income", dist = "uniform", formula = "0;1")
+  defs <- defData(defs, varname = "career", dist = "nonrandom", formula = "genProbs(x=family_income)")
+  set.seed(11)
   data <- genData(n = 500, dtDefs = defs)
   data <- genFactor(data, varname = "career", labels = paste("career", 1:3))
 })
 # glimpse(sim$data)
 dataCareer <- as.data.frame(sim$data)
-# glimpse(dataCareer)
+```
+and we plot the distribution of the family income which is used as a predictor
+for each category
+
+```{r}
+p <- list()
+p$dens <- ggplot(dataCareer, aes(x = family_income, color = fcareer)) +
+  geom_density(size = 1.5) +
+  scale_color_paletteer_d("khroma::contrast") +
+  theme(legend.position = c(0.8, 0.8),
+        legend.title = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  labs(title = "observed densities of familiy income by career",
+       subtitle = sprintf("sample size = %d", nrow(dataCareer)),
+       x = "family income", y = NULL)
+  
+p$dens
+```
+
+
+Now lets fit the model with `brms`
+
+```{r}
+a_file <- here::here("fits", "b11_14.rds")
+b11.14 <- readRDS(a_file)
+# b11.14 <- brm(data = dataCareer, 
+#       family = categorical(link = logit, refcat = 3),
+#       bf(career ~ 1,
+#          nlf(mu1 ~ a1 + b1 * family_income),
+#          nlf(mu2 ~ a2 + b2 * family_income),
+#          a1 + a2 + b1 + b2 ~ 1),
+#       prior = c(prior(normal(0, 1.5), class = b, nlpar = a1),
+#                 prior(normal(0, 1.5), class = b, nlpar = a2),
+#                 prior(normal(0, 1), class = b, nlpar = b1),
+#                 prior(normal(0, 1), class = b, nlpar = b2)),
+#       cores = detectCores(), seed = 11)
+# b11.14 <- add_criterion(b11.14, criterion = c("waic", "loo"))
+# saveRDS(b11.14, file = a_file)
+```
+
+the summary is
+
+```{r}
+summary(b11.14)
+```
+
+and lets see PSIS
+
+```{r}
+loo(b11.14)
+```
+
+
+```{r}
+p <- list()
+p <- within(p, {
+  newdata <- data.frame(family_income = seq(from = 0, to = 1, by = 0.02))
+  data <- epred_draws(b11.14, newdata = newdata) %>%
+    as.data.frame()
+  stats <- data %>%
+    group_by(family_income, .category) %>%
+    ggdist::mean_qi(.width = 0.95)
+})
+glimpse(p$data)
+p$stats
+
+ggplot(p$stats, aes(x = family_income, y = .epred, ymin = .lower, ymax = .upper, 
+                    color = .category, fill = .category)) +
+  geom_smooth(stat = "identity") +
+  scale_color_paletteer_d("khroma::contrast") +
+  scale_fill_paletteer_d("khroma::contrast") +
+  theme(legend.position = "bottom") +
+  labs(title = "probabilities of career relative to family income",
+       y = "probabilities", color = "career", fill = "career")
 ```
 
 
 
 
 ### Multinomial in disguise as Poisson
+
+```{r}
+data(UCBadmit)
+dataAdmit <- UCBadmit
+rm(UCBadmit)
+```
+
+
 
 
 
