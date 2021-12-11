@@ -735,7 +735,8 @@ $\lambda_j$ is lognormal distributed.
 ##### With `simstudy`
 
 ```{r}
-sim <- list()
+exp(3)
+sim <- list(nsamples = 100)
 sim <- within(sim, {
   # define the model
   defs <- defData(varname = "a", dist = "normal", formula = "..m",
@@ -752,7 +753,7 @@ sim <- within(sim, {
     m <- grid$mean[i]
     s <- grid$sd[i]
     set.seed(as.integer(as.Date("2021-12-09")))
-    genData(n = 100, dtDefs = defs) %>%
+    genData(n = nsamples, dtDefs = defs) %>%
       as.data.frame() %>%
       mutate(mean = grid$mean[i],
              sd = grid$sd[i],
@@ -824,9 +825,8 @@ simulation on the natural scale as it is much easier to understand
 
 ```{r}
 sim <- list(nsamples = 100,  # same as mcElreath 
-            npreds = 100,  # same as McElreath
-            pop_log_mean = mean(log(dataKline$log_pop)),
-            pop_log_sd = sd(log(dataKline$log_pop)))
+            npreds = 100)  # same as McElreath
+
 sim <- within(sim, {
   # define the model
   defs <- defData(varname = "a", dist = "normal", formula = 3,
@@ -848,7 +848,7 @@ sim <- within(sim, {
       mutate(mean = grid$mean[i],
              sd = grid$sd[i],
              model = grid$model[i]) %>%
-      expand(nesting(id, a, b, mean, sd, model),
+      tidyr::expand(nesting(id, a, b, mean, sd, model),
            log_pop_s = seq(from = -2, to = 2, length.out = npreds)) %>%
       mutate(lambda = exp(a + b * log_pop_s))
     })
@@ -864,7 +864,7 @@ sim <- within(sim, {
       mutate(mean = grid$mean[i],
              sd = grid$sd[i],
              model = grid$model[i]) %>%
-      expand(nesting(id, a, b, mean, sd, model),
+      tidyr::expand(nesting(id, a, b, mean, sd, model),
            log_pop = seq(from = log(100), to = log(2e5), length.out = npreds)) %>%
       mutate(lambda = exp(a + b * log_pop))
     })
@@ -876,17 +876,17 @@ sim <- within(sim, {
 # glimpse(sim$data)
 
 p <- list()
-p$pop_log_s <- ggplot(sim$data_log_s, aes(x = log_pop_s, y = lambda, group = id, color = model)) +
+p$log_s <- ggplot(sim$data_log_s, aes(x = log_pop_s, y = lambda, group = id, color = model)) +
   geom_line() +
   scale_fill_paletteer_d("LaCroixColoR::PassionFruit") +
   theme(legend.position = "none") +
   labs(title = "Prior predictive distribution of the mean (lambda)",
        x = "Standard log population", y = "mean total tools(lambda)") +
   facet_wrap(. ~ model, scales = "free_y")
-p$pop_log_s
+# p$log_s
 
 
-p$pop_log <- ggplot(sim$data_log, aes(x = log_pop, y = lambda, group = id, color = model)) +
+p$log <- ggplot(sim$data_log, aes(x = log_pop, y = lambda, group = id, color = model)) +
   geom_line() +
   scale_fill_paletteer_d("LaCroixColoR::PassionFruit") +
   coord_cartesian(ylim = c(0, 500)) +
@@ -894,10 +894,10 @@ p$pop_log <- ggplot(sim$data_log, aes(x = log_pop, y = lambda, group = id, color
   labs(title = "Prior predictive distribution of the mean (lambda)",
        x = "Log population", y = "mean total tools(lambda)") +
   facet_wrap(. ~ model, scales = "free_y")
-p$pop_log
+# p$log
 
 p$hline <- 100
-p$pop <- ggplot(sim$data_log, aes(x = exp(log_pop), y = lambda, group = id, color = model)) +
+p$nat <- ggplot(sim$data_log, aes(x = exp(log_pop), y = lambda, group = id, color = model)) +
   geom_line() +
   geom_hline(yintercept = p$hline, color = "darkblue", linetype = "dashed", size = 1) +
   scale_fill_paletteer_d("LaCroixColoR::PassionFruit") +
@@ -907,37 +907,37 @@ p$pop <- ggplot(sim$data_log, aes(x = exp(log_pop), y = lambda, group = id, colo
   labs(title = "Prior predictive distribution of the mean (lambda)",
        x = "Population in thousands", y = "mean total tools(lambda)") +
   facet_wrap(. ~ model, scales = "free_y")
-p$pop
+p$nat
 ```
 
 and the same plots as McElreaths
 
 ```{r}
 p <- list()
-p$pop_log_s <- ggplot(sim$lst_log_s[[2]], aes(x = log_pop_s, y = lambda, group = id)) +
+p$log_s <- ggplot(sim$lst_log_s[[2]], aes(x = log_pop_s, y = lambda, group = id)) +
   geom_line(color = "lightcoral") +
   theme(legend.position = "none") +
   labs(x = "Standard log population", y = "mean total tools(lambda)")
-# p$pop_log_s
+# p$log_s
 
-p$pop_log <- ggplot(sim$lst_log[[2]], aes(x = log_pop, y = lambda, group = id, color = model)) +
+p$log <- ggplot(sim$lst_log[[2]], aes(x = log_pop, y = lambda, group = id, color = model)) +
   geom_line(color = "darkgoldenrod") +
   coord_cartesian(ylim = c(0, 500)) +
   theme(legend.position = "none") +
   labs(x = "Log population", y = "mean total tools(lambda)")
-# p$pop_log
+# p$log
 
 p$hline <- 100
-p$pop <- ggplot(sim$lst_log[[2]], aes(x = exp(log_pop), y = lambda, group = id, color = model)) +
+p$nat <- ggplot(sim$lst_log[[2]], aes(x = exp(log_pop), y = lambda, group = id, color = model)) +
   geom_line(color = "lightseagreen") +
   geom_hline(yintercept = p$hline, color = "darkblue", linetype = "dashed", size = 1) +
   scale_x_continuous(labels = scales::label_number(scale = 0.001)) +
   coord_cartesian(ylim = c(0, 500)) +
   theme(legend.position = "none") +
   labs(x = "Population in thousands", y = "mean total tools(lambda)")
-# p$pop
+# p$nat
 
-p$pop_log_s + p$pop_log + p$pop +
+p$log_s + p$log + p$nat +
   plot_annotation(title = "Prior predictive distribution of the mean (lambda)",
        subtitle = names(sim$lst_log)[2])
 
