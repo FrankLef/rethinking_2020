@@ -8,6 +8,7 @@ library(loo)
 library(modelr)
 library(simstudy)
 library(posterior)
+library(scales)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -197,7 +198,7 @@ less useful.
 ##### Prior for $\alpha$ with `simstudy`
 
 Using `simstudy` is actually pretty simple avoid having to run the fit which
-could have convergence issues and certainly more time-consuming.
+could have convergence issues and is certainly more time-consuming.
 
 1 + prosoc_left + 2 * condition
 
@@ -346,54 +347,43 @@ ggplot(samples$data, aes(x = diff, color = model)) +
 
 ##### Prior for $\beta$ with `simstudy`
 
+We also simulate $\beta$ with `sinmstudy` which is more versatile and easier
+to code (personal opinion), e.g. no need to convert with `inv_logit_scaled` and
+no need to run the model with `prior_draws()`
+
 
 ```{r}
-set.seed(as.integer(as.Date("2021-11-25")))
 sim <- list(n = 1000)
-# sim$specs <- list("b_ar" = c("mean" = 0, "var" = 10^2),
-#                   "b_al" = c("mean" = 0, "var" = 10^2),
-#                   "b_pr" = c("mean" = 0, "var" = 10^2),
-#                   "b_pl" = c("mean" = 0, "var" = 10^2))
-
-# since all beta have the same variance we only do it for 
 sim <- within(sim, {
+  # define the model
   defs <- defData(varname = "a", dist = "normal", formula = 0, variance = 1.5^2)
-  v <- 10^2
   defs <- defData(defs, varname = "b1", dist = "normal", formula = 0, variance = "..v")
   defs <- defData(defs, varname = "b2", dist = "normal", formula = 0, variance = "..v")
   defs <- defData(defs, varname = "b3", dist = "normal", formula = 0, variance = "..v")
   defs <- defData(defs, varname = "b4", dist = "normal", formula = 0, variance = "..v")
-  defs <- defData(defs, varname = "linpred1", dist = "nonrandom", formula = "a + b1",
+  defs <- defData(defs, varname = "p1", dist = "nonrandom", formula = "a + b1",
                   link = "logit")
-  defs <- defData(defs, varname = "linpred2", dist = "nonrandom", formula = "a + b2",
+  defs <- defData(defs, varname = "p2", dist = "nonrandom", formula = "a + b2",
                   link = "logit")
-  defs <- defData(defs, varname = "linpred3", dist = "nonrandom", formula = "a + b3",
+  defs <- defData(defs, varname = "p3", dist = "nonrandom", formula = "a + b3",
                   link = "logit")
-  defs <- defData(defs, varname = "linpred4", dist = "nonrandom", formula = "a + b4",
+  defs <- defData(defs, varname = "p4", dist = "nonrandom", formula = "a + b4",
                   link = "logit")
-  data1 <- genData(n = n, dtDefs = defs) %>%
-    mutate(model = "sd=10",
-           p1 = inv_logit_scaled(linpred1),
-           p2 = inv_logit_scaled(linpred2),
-           p3 = inv_logit_scaled(linpred3),
-           p4 = inv_logit_scaled(linpred4)) %>%
+  
+  # generate the data
+  grid <- list(10, 0.5)
+  set.seed(as.integer(as.Date("2021-11-25")))
+  lst <- lapply(X = grid, FUN = function(x) {
+    v <- x^2
+    df <- genData(n = n, dtDefs = defs) %>%
+      as.data.frame() %>%
+      mutate(model = sprintf("sd=%.1f", x))
+  })
+  data <- do.call(rbind, lst) %>%
     mutate(diff = abs(p1 - p2))
   
-  v <- 0.5^2
-  updateDef(defs, changevar = "b1", newvariance = "..v")
-  updateDef(defs, changevar = "b2", newvariance = "..v")
-  updateDef(defs, changevar = "b3", newvariance = "..v")
-  updateDef(defs, changevar = "b4", newvariance = "..v")
-  data2 <- genData(n = n, dtDefs = defs) %>%
-    mutate(model = "sd=0.5",
-           p1 = inv_logit_scaled(linpred1),
-           p2 = inv_logit_scaled(linpred2),
-           p3 = inv_logit_scaled(linpred3),
-           p4 = inv_logit_scaled(linpred4)) %>%
-    mutate(diff = abs(p1 - p2))
-  data <- rbind(data1, data2)
-  })
-# str(sim$data)
+})
+# glimpse(sim$data)
 
 ggplot(sim$data, aes(x = diff, color = model)) +
   geom_density(size = 1, alpha = 3/4, adjust = 0.1) +
@@ -419,6 +409,7 @@ logit(p_i) &= \alpha_{actor[i]} + \beta_{treatment[i]} \\
 \beta_k &\sim \mathcal{N}(0, 0.5)
 \end{align*}
 $$
+
 We use `brms::brm()` in  aslightly different way than @kurtz2020b. Kurtz create
 distinct priors for every category of treatment.  This is justified by his
 desire to get the prior data in a separate column for every prior.  We don't
@@ -735,12 +726,11 @@ $\lambda_j$ is lognormal distributed.
 ##### With `simstudy`
 
 ```{r}
-exp(3)
 sim <- list(nsamples = 100)
 sim <- within(sim, {
   # define the model
   defs <- defData(varname = "a", dist = "normal", formula = "..m",
-                  variance = "..s^2")
+                  variance = "..v")
   defs <- defData(defs, varname = "lambda", dist = "nonrandom", 
                   formula = "a", link = "log")
   
@@ -752,20 +742,16 @@ sim <- within(sim, {
   lst <- lapply(seq_len(nrow(grid)), FUN = function(i) {
     m <- grid$mean[i]
     s <- grid$sd[i]
+    v <- s^2
     set.seed(as.integer(as.Date("2021-12-09")))
     genData(n = nsamples, dtDefs = defs) %>%
       as.data.frame() %>%
-      mutate(mean = grid$mean[i],
-             sd = grid$sd[i],
-             model = grid$model[i])
+      mutate(mean = m, sd = s, model = grid$model[i])
     })
   names(lst) <- grid$model
   
   data <- do.call(rbind, lst)
 })
-
-# str(sim$lst)
-
 # glimpse(sim$data)
 
 p$plot <- ggplot(sim$data, aes(x = lambda, fill = as.factor(mean), color = as.factor(mean))) +
@@ -832,22 +818,22 @@ sim <- within(sim, {
   defs <- defData(varname = "a", dist = "normal", formula = 3,
                   variance = 0.5^2)
   defs <- defData(defs, varname = "b", dist = "normal", 
-                  formula = "..m", variance = "..s^2")
+                  formula = "..m", variance = "..v")
   
   # generate data using the grid f specs
   grid <- expand.grid(mean = 0, 
                       sd = seq(from = 0.1, to = 0.6, by = 0.1)) %>%
     mutate(model = sprintf("m=%.1f, s=%.1f", mean, sd))
   
+  # create sim with standardized log
   lst_log_s <- lapply(seq_len(nrow(grid)), FUN = function(i) {
-    set.seed(10)
+    set.seed(10)  # same seed as McElreath
     m <- grid$mean[i]
     s <- grid$sd[i]
+    v <- s^2
     genData(n = nsamples, dtDefs = defs) %>%
       as.data.frame() %>%
-      mutate(mean = grid$mean[i],
-             sd = grid$sd[i],
-             model = grid$model[i]) %>%
+      mutate(mean = m, sd = s, model = grid$model[i]) %>%
       tidyr::expand(nesting(id, a, b, mean, sd, model),
            log_pop_s = seq(from = -2, to = 2, length.out = npreds)) %>%
       mutate(lambda = exp(a + b * log_pop_s))
@@ -855,15 +841,15 @@ sim <- within(sim, {
   names(lst_log_s) <- grid$model
   data_log_s <- do.call(rbind, lst_log_s)
   
+  # create sim with log
   lst_log <- lapply(seq_len(nrow(grid)), FUN = function(i) {
     set.seed(10)  # same seed as McElreath
     m <- grid$mean[i]
     s <- grid$sd[i]
+    v <- s^2
     genData(n = nsamples, dtDefs = defs) %>%
       as.data.frame() %>%
-      mutate(mean = grid$mean[i],
-             sd = grid$sd[i],
-             model = grid$model[i]) %>%
+      mutate(mean = m, sd = s, model = grid$model[i]) %>%
       tidyr::expand(nesting(id, a, b, mean, sd, model),
            log_pop = seq(from = log(100), to = log(2e5), length.out = npreds)) %>%
       mutate(lambda = exp(a + b * log_pop))
@@ -894,7 +880,7 @@ p$log <- ggplot(sim$data_log, aes(x = log_pop, y = lambda, group = id, color = m
   labs(title = "Prior predictive distribution of the mean (lambda)",
        x = "Log population", y = "mean total tools(lambda)") +
   facet_wrap(. ~ model, scales = "free_y")
-# p$log
+p$log
 
 p$hline <- 100
 p$nat <- ggplot(sim$data_log, aes(x = exp(log_pop), y = lambda, group = id, color = model)) +
@@ -910,7 +896,7 @@ p$nat <- ggplot(sim$data_log, aes(x = exp(log_pop), y = lambda, group = id, colo
 p$nat
 ```
 
-and the same plots as McElreaths
+and the same plots as McElreaths with the chosen priors
 
 ```{r}
 p <- list()
@@ -940,7 +926,6 @@ p$nat <- ggplot(sim$lst_log[[2]], aes(x = exp(log_pop), y = lambda, group = id, 
 p$log_s + p$log + p$nat +
   plot_annotation(title = "Prior predictive distribution of the mean (lambda)",
        subtitle = names(sim$lst_log)[2])
-
 ```
 
 

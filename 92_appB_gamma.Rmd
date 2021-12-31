@@ -1,0 +1,217 @@
+```{r include=FALSE}
+library(dplyr, quietly = TRUE)
+library(tidyr, quietly = TRUE)
+library(rethinking)
+library(brms)
+library(modelr)
+library(simstudy)
+```
+
+
+# Appendix B - Gamma distribution {-}
+
+
+```{r echo=FALSE}
+message("TODO: I could not make the conversion from brms to rethinking work.,
+        Even Kurtz's explanations, althoughbetter than McElreath, don't
+        really solve this issue.")
+```
+
+
+
+This appendix sorts out the issues with gamma parameters.  They are covered by
+@kurtz2020b but the different notations make the section a bit difficult to
+follow.
+
+Greek letters are great to represent parameters but, in this case, they will
+be avoided to facilitate the discussion with the exception that $\mu = \text{mean}$
+$\sigma=\text{standard deviation}$ because they are very well known conventions.
+
+## Gamma distribution
+
+
+The gamma distribution can be expressed in 3 ways
+
+In terms of the $shape$, usually called $\alpha$ and $rate$, called $\beta$ 
+the gamma distribution is
+
+$$
+\begin{align*}
+\mathcal{Gamma}(y \mid\alpha, \beta) &= \frac{\beta^\alpha y^{\alpha-1} e^{-\beta y}}{\Gamma(\alpha)} \\
+\mathcal{Gamma}(y \mid shape, rate) &= \frac{rate^{shape} y^{shape-1} e^{-rate \cdot y}}{\Gamma(shape)}
+\end{align*}
+$$
+
+The $scale$ of the gamma distribution represents its dispersion. This is
+mentioned in @elreath2020, section 12.1.2 top of p. 374.
+
+$$
+scale = dispersion = \frac{\sigma^2}{\mu^2}
+$$
+The $scale$ ad $rate$ are the reciprocal of each othe
+
+$$
+scale = \frac{1}{rate}
+$$
+
+
+As a result the gamma distribution can be expressed in terms of $shape$, called $\alpha$,
+and $scale$, called $\theta$ as
+
+
+$$
+\begin{align*}
+\mathcal{Gamma}(y \mid \alpha, \theta) &= \frac{y^{\alpha-1} e^{-\frac{y}{\theta}}}{\theta^\alpha\Gamma(\alpha)} \\
+\mathcal{Gamma}(y \mid shape, scale) &= \frac{y^{shape-1} e^{-\frac{y}{scale}}}{scale^{shape}\Gamma(shape)}
+\end{align*}
+$$
+
+
+Also, the gamma distribution can be expressed in terms of **mean** $\mu$ and
+shape $\alpha$
+
+
+$$
+\begin{align*}
+\mathcal{Gamma}(y \mid \mu, \alpha) &= \frac{(\frac{\alpha}{\mu})^\alpha}{\Gamma(\alpha)}
+  y^{\alpha-1} \exp{(-\frac{\alpha y}{\mu})} \\
+\mathcal{Gamma}(y \mid \mu, shape) &= \frac{(\frac{shape}\mu)^{shape}}{\Gamma(shape)}
+  y^{shape-1} \exp{(-\frac{shape \cdot y}{\mu})}
+\end{align*}
+$$
+
+
+## Usage
+
+As explained in @elreath2020, section 12.1.2 p. 374, `rethinking` uses the 
+`dgampois(x, mu, scale)` which uses the $mean = \mu$, named $\lambda$
+and the $scale$, named $\phi$ in section 12.1.2.
+
+
+On the other hand, as explained in @kurtz2020b, secion 12.1.2, `brms`
+parameterizes the gamma likelihood in terms of $\mu$ and the $shape$ 
+(called $\alpha$).
+
+## Conversion
+
+Now, `rethinking::ulam()` will give use results in terms of $\mu$ and $scale$ 
+and `brms::brm()` will return results in terms of $\mu$ and $shape$. Therefore
+the question is: *Given a $scale$ from `rethinking``, how do convert it to a
+$shape$?*
+
+My suggested answer is to use the `gammaGetShapeRate(mean, dispersion)` from the
+`simstudy` package used extensively in this project to simulate priors.
+
+
+```{r}
+# rethinking::dampois()
+```
+
+
+## Example
+
+The example is taken from the documentation for `rethinking::dgampois()`. 
+It also happen to be used for practice 12H2 in @elreath2020.
+
+```{r}
+data("Hurricanes")
+dataHurricanes <- Hurricanes
+rm(Hurricanes)
+```
+
+
+
+```{r}
+a_file <- here::here("fits", "mAppB1.rds")
+mAppB1 <- readRDS(file = a_file)
+# mAppB1 <- quap(
+#     alist(
+#         deaths ~ dgampois(mu , scale),
+#         log(mu) <- a,
+#         a ~ dnorm(0,100),
+#         scale ~ dexp(1)
+#     ),
+#     data = dataHurricanes )
+# saveRDS(mAppB1, file = a_file)
+# mAppB1 <- quap(
+#     alist(
+#         deaths ~ dgampois(mu , scale),
+#         log(mu) <- a + b*femininity,
+#         a ~ dnorm(0,100),
+#         b ~ dnorm(0,1),
+#         scale ~ dexp(1)
+#     ),
+#     data = dataHurricanes )
+# saveRDS(mAppB1, file = a_file)
+```
+
+
+```{r}
+precis(mAppB1)
+```
+
+and the fit with `brm`
+
+```{r}
+a_file <- here::here("fits", "bAppB1.rds")
+bAppB1 <- readRDS(file = a_file)
+# bAppB1 <- brm(data = dataHurricanes,
+#       family = negbinomial,
+#       deaths ~ 1,
+#       prior = c(prior(normal(0, 100), class = Intercept),
+#                 prior(gamma(0.01, 0.01), class = shape)),  # alpha
+#       cores = detectCores())
+# bAppB1 <- brm(data = dataHurricanes,
+#       family = negbinomial,
+#       deaths ~ 1 + femininity,
+#       prior = c(prior(normal(0, 100), class = Intercept),
+#                 prior(normal(0, 1), class = b),
+#                 prior(gamma(0.01, 0.01), class = shape)),  # alpha
+#       cores = detectCores())
+# saveRDS(object = bAppB1, file = a_file)
+```
+
+which gives these estimates
+
+```{r}
+posterior_summary(bAppB1)
+```
+
+The results form `quap` and `brm` are similar except the $scale$ and $shape$.
+
+```{r}
+rethink <- list()
+rethink$mu <- exp(precis(mAppB1)["a", "mean"])
+# rethink$mu <- exp(precis(mAppB1)["a", "mean"] + precis(mAppB1)["b", "mean"])
+rethink$mu
+rethink$scale <- precis(mAppB1)["scale", "mean"]
+rethink$scale
+```
+
+Knowing from above that $scale = dispersion$ then we use
+`gammaGetShapeRate(mean, dispersion)` to obtain the shape
+
+```{r}
+posterior_summary(bAppB1)["shape", "Estimate"]
+brm <- list()
+b1 <- gammaGetShapeRate(mean = rethink$mu, dispersion = rethink$scale)
+b1
+b2 <- gammaGetShapeRate(mean = rethink$mu, dispersion = 1 / rethink$scale)
+b2
+```
+
+```{r}
+brm <- list()
+brm$mean <- exp(posterior_summary(bAppB1)["b_Intercept", "Estimate"])
+brm$shape <- posterior_summary(bAppB1)["shape", "Estimate"]
+gammaGetMeanDispersion <- function(shape, rate) {
+  stopifnot(shape > 0, rate > 0)
+  dispersion <- 1 / shape
+  mean <- shape / rate
+  list("mean" = mean, "dispersion" = dispersion)
+}
+t <- gammaGetMeanDispersion(shape = brm$shape, rate = brm$mean)
+t
+gammaGetShapeRate(mean = t$mean, dispersion = t$dispersion)
+```
+

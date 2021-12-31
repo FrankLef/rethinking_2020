@@ -8,6 +8,7 @@ library(loo)
 library(modelr)
 library(simstudy)
 library(posterior)
+library(scales)
 library(dagitty, quietly = TRUE)
 library(ggdag, quietly = TRUE)
 library(ggdist, quietly = TRUE)
@@ -398,7 +399,7 @@ stopifnot(identical(prm$md, prm$values))
 ```
 
 
-In the `dgamma` the shape parameter influence the and rate represents the equivalent
+In the `dgamma` the shape parameter influence the rate which is equivalent to
 Poisson $lambda$
 
 ```{r}
@@ -472,7 +473,7 @@ log(\mu) &= \beta_0 \\
 \end{align*}
 $$
 
-and the fit
+and the fit with `brm`
 
 ```{r}
 a_file <- here::here("fits", "b12_02a.rds")
@@ -495,14 +496,57 @@ with the summary
 summary(b12.2a)
 ```
 
+
+and the fit with `ulam`
+
+```{r}
+a_file <- here::here("fits", "m12_02a.rds")
+m12.2a <- readRDS(file = a_file)
+# m12.2a <- ulam(
+#   data = dataKline,
+#   flist = alist(
+#     total_tools ~ dgampois(mu, scale),
+#     log(mu) <- a,
+#     a ~ dnorm(3, 0.5),
+#     scale ~ dexp(1)
+#   ),
+#   log_lik = TRUE
+# )
+# saveRDS(object = m12.2a, file = a_file)
+```
+
+and the summary is
+
+```{r}
+summary(m12.2a)
+```
+
+```{r}
+posterior_summary(b12.2a)
+```
+
+```{r}
+precis(m12.2a)
+```
+
+```{r}
+m <- posterior_summary(b12.2a)["b_Intercept", "Estimate"]
+m
+s <- posterior_summary(b12.2a)["shape", "Estimate"]
+d <- s
+simstudy::gammaGetShapeRate(mean = m, dispersion = d)
+```
+
+
+
 Because the model has only the intercept and no predictor, there is only
-one value for the Intercept which is the mean of the 10 possion rates 
+one value for the Intercept which is the mean of the 10 Poisson rates 
 $\lambda_i, i =1,...10$.
 
 The $alpha$ is simply the $shape$ parameter of gamma ... and does not really
 describe anything.  It is really used to define the shape of the distribution.
 
-And the prediciton plots show that the distributions all use the same rate and 
+And the prediction plots show that the distributions all use the same rate and 
 shape.
 
 ```{r}

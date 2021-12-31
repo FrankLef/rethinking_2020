@@ -10,7 +10,7 @@
 
 # Appendix A - `logit()` distribution
 
-McElrath and Kurz create `logistic()`, `logit()`, etc. Actually
+McElreath and Kurz create `logistic()`, `logit()`, etc. Actually
 both function exist in the base R package `stats` under the name
 `plogis()` for `logistic()` and `qlogis()` for `logit()`.
 
@@ -23,7 +23,7 @@ for a nice explanation.
 
 > This function is in the base r package `stats` and is called `plogis()`.
 
-In McElrath's [GitHub page](https://github.com/rmcelreath/rethinking/blob/a309712d904d1db7af1e08a76c521ab994006fd5/R/distributions.r), there are 2 functions, `logistic()` and `inv_logit()` who are identical
+In McElreath's [GitHub page](https://github.com/rmcelreath/rethinking/blob/a309712d904d1db7af1e08a76c521ab994006fd5/R/distributions.r), there are 2 functions, `logistic()` and `inv_logit()` who are identical
 and whose use (inverting the logit function) is the same.
 
 What is the reason?  Shouldn't there be only one function to avoid errors and simplify
@@ -35,14 +35,14 @@ in `brms`.
 
 
 As a check, we will use the result of the model 11.1 which is called
-`m11.1` by McElrath with `rethinking` and b11.1 by Kurz with `brms`.
+`m11.1` by McElreath with `rethinking` and b11.1 by Kurz with `brms`.
 
 ```{r}
 intercepts <- c(-1.92, -1.27, -0.72, 0.25, 0.89, 1.77)
 ```
 
 
-the logistic function as programmed by McElrath and Kurz is
+the logistic function as programmed by McElreath and Kurz is
 
 ```{r}
 logistic <- function(x) {
