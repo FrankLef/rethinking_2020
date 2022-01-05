@@ -795,7 +795,7 @@ ggplot(dataMonastery, aes(x = output)) +
 $$
 \begin{align*}
 prod_i &\sim \mathcal{ZIPoisson}(p, \lambda) \\
-p &= \alpha_p \\
+logit(p) &= \alpha_p \\
 log(\lambda) &= \alpha_\lambda \\
 \alpha_p &\sim \mathcal{Beta}(2, 6) \\
 \alpha_\lambda &\sim \mathcal{N}(1, 0.5)
@@ -844,7 +844,7 @@ The $b_Intercept$ represents $\lambda$ on the log scale, because the link functi
 for $\lambda$. This can be confirm by looking at the summary which shows
 **Links: mu = log; zi = identity**.
 
-We observe that $lambda$ matches the actual rate of our simulaiton with
+We observe that $lambda$ matches the actual rate of our simulation with
 `defData(defs, varname = "work", dist = "poisson", formula = 1)`.
 
 When using `brms` the parameter $zi$ has link function *identity* as evidenced 

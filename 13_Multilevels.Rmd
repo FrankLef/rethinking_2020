@@ -1,87 +1,129 @@
 ```{r include=FALSE}
+library(dplyr, quietly = TRUE)
+library(tidyr, quietly = TRUE)
+library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
-library(tidyr)
-library(dplyr)
-library(ggplot2)
-library(paletteer)
-library(bayesplot)
+library(loo)
+library(modelr)
+library(simstudy)
+library(posterior)
+library(scales)
+library(dagitty, quietly = TRUE)
+library(ggdag, quietly = TRUE)
+library(ggdist, quietly = TRUE)
+library(ggmcmc, quietly = TRUE)
+library(bayesplot, quietly = TRUE)
+library(patchwork, quietly = TRUE)
+library(paletteer, quietly = TRUE)
 ```
 
 
 # Multilevel Models {#MLM}
 
 
+We set the current theme used for plotting
+
+```{r}
+theme_set(ggthemes::theme_solarized_2())
+# theme_set(
+#   ggthemes::theme_solarized_2(light = TRUE) +
+#   theme(strip.background = element_rect(fill = "darkgrey"))
+#   )
+```
+
+
+```{r}
+# data(iris)
+# ggplot(iris, aes(x = Petal.Length, y = Sepal.Length, color = Species)) +
+#   geom_point() +
+#   labs(title = "Iris dataset", subtitle = sprintf("%d lines", nrow(iris)))
+```
 
 ## Example: Multilevel tadpoles
 
 ```{r}
 data(reedfrogs)
-d <- reedfrogs %>%
+dataFrogs <- reedfrogs %>%
   mutate(tank = seq_len(nrow(.)),
          tank = factor(tank))
-glimpse(d)
+rm(reedfrogs)
+skimr::skim(dataFrogs)
 ```
+
+with the plot of data
+
+```{r}
+plotFrogs <- ggplot(dataFrogs, aes(x = as.integer(tank), y = propsurv)) +
+  geom_point(color = "sienna") +
+  geom_hline(yintercept = 0.8, color = "sienna1", linetype = "dashed") +
+  geom_vline(xintercept = c(16.5, 32.5), size = 1/3, color = "sienna1") +
+  scale_x_continuous(breaks = c(1, 16, 32, 48)) +
+  scale_y_continuous(breaks = scales::breaks_width(width = 0.2),
+                     labels = scales::label_percent(accuracy = 1)) +
+  annotate(geom = "text",
+           x = c(8, 16 + 6, 32 + 8), y = 0,
+           label = c("small tanks", "medium tanks", "large tanks"),
+           color = "midnightblue") +
+  theme(axis.text.x = element_text(size = rel(1))) +
+  labs(title = "Tadpole tanks",
+       subtitle = sprintf("%d data points", nrow(dataFrogs)),
+       x = "tank", y = "proportion survival")
+plotFrogs
+```
+
+
 
 ### Example: Multilevel tadpoles - Simple
 
 and the model, without multilevel effect, is
 
 $$
-surv_i \sim \mathcal{Binomial}(n_i, p_i) \\
-logit(p_i) = \alpha_{tank[i]} \\
-\alpha_{tank} \sim \mathcal{N}(0, 5)
+\begin{align*}
+surv_i &\sim \mathcal{Binomial}(n_i, p_i) \\
+logit(p_i) &= \alpha_{tank[i]} \\
+\alpha_{tank} &\sim \mathcal{N}(0, 1.5)
+\end{align*}
 $$
 
 and we fit this
 
 ```{r}
-a_file <- here::here("fits", "b12_01.rds")  # rds file location
-stopifnot(file.exists(a_file))
-b12.1 <- readRDS(file = a_file)  # load the file
-# b12.1 <- brm(
-#   data = d,
+a_file <- here::here("fits", "b13_01.rds")
+b13.1 <- readRDS(file = a_file)
+# b13.1 <- brm(
+#   data = dataFrogs,
 #   family = binomial,
 #   surv | trials(density) ~ 0 + tank,
-#   prior = c(prior(normal(0, 5), class = b)),
-#   iter = 2000, warmup = 500, chains = 4, cores = 4,
-#   seed = 12)
-# b12.1 <- add_criterion(b12.1, c("loo", "waic"))
-# saveRDS(object = b12.1, file = a_file)
+#   prior = c(prior(normal(0, 1.5), class = b)),
+#   cores = detectCores(), seed = 13)
+# b13.1 <- add_criterion(b13.1, c("loo", "waic"))
+# saveRDS(object = b13.1, file = a_file)
+summary(b13.1)
 ```
 
-which gives this summary
+
+and visualize the intercepts which correspond to the logit of the probabilities.
+
 
 ```{r}
-# summary(b12.1)
-```
-
-and visualize the intercepts which correxponds to the logit of the probabilities.
-
-We create the data set
-
-```{r}
-pdf <- fixef(b12.1) %>%
+p <- list()
+p$df <- fixef(b13.1) %>%
   as.data.frame() %>%
   select(Estimate) %>%
-  mutate(p = stats::plogis(Estimate)) %>%
+  mutate(p = gtools::inv.logit(Estimate)) %>%
   pivot_longer(cols = c("Estimate", "p"), names_to = "key") %>%
   mutate(key = if_else(key == "p", "exp_surv_prob", "exp_surv_log-odds"))
-pdf
-```
-
-and then the plots
-
-```{r}
-p <- ggplot(pdf, aes(x = value, fill = key)) +
-  geom_density(stat = "density", color = "transparent") +
+# p$df
+ggplot(p$df, aes(x = value, fill = key, color = key)) +
+  geom_dotplot() +
+  scale_fill_manual(values = c("orange1", "orange4")) +
+  scale_color_manual(values = c("orange1", "orange4")) +
   scale_y_continuous(breaks = NULL) +
-  scale_fill_manual(values = c("violet", "lightcoral")) +
-  ggthemes::theme_fivethirtyeight() +
-  theme(legend.position = "none",
-        panel.grid.major = element_blank()) +
-  facet_wrap(~ key, scales = "free")
-p
+  theme(legend.position = "none") +
+  labs(title = "Tank-level intercepts from the no-pooling model",
+       x = NULL, y = NULL) +
+  facet_wrap(~ key, scales = "free_x")
 ```
 
 
@@ -91,33 +133,35 @@ p
 and now the multilevel model
 
 $$
-surv_i \sim \mathcal{Binomial}(n_i, p_i) \\
-logit(p_i) = \alpha_{tank[i]} \\
-\alpha_{tank} \sim \mathcal{N}(0, 5) \\
-\alpha \sim \mathcal{N}(0, 1) \\
-\sigma \sim \mathcal{HalfCauchy}(0, 1)
+\begin{align*}
+surv_i &\sim \mathcal{Binomial}(n_i, p_i) \\
+logit(p_i) &= \alpha_{tank[i]} \\
+\alpha_j &\sim \mathcal{N}(\bar{\alpha}, \sigma) \\
+\bar{\alpha} &\sim \mathcal{N}(0, 1.5) \\
+\sigma &\sim \mathcal{Exponential}(1)
+\end{align*}
 $$
 
-and the fit is as follows.  Note the prior `prior(cauchy(0, 1), class = sd)`
+and the fit is as follows.  Note the prior `prior(exponential(0, 1), class = sd)`
 *which is parametrized in the standard deviation metric* (Kurtz). It is common
 for multilevel software to model the variance metric.  This will be further
-explained in chapter 13.
+explained in chapter 14.
 
 
 ```{r}
-a_file <- here::here("fits", "b12_02.rds")  # rds file location
-stopifnot(file.exists(a_file))
-b12.2 <- readRDS(file = a_file)  # load the file
-# b12.2 <- brm(
-#   data = d,
+a_file <- here::here("fits", "b13_02.rds")
+b13.2 <- readRDS(file = a_file)
+# b13.2 <- brm(
+#   data = dataFrogs,
 #   family = binomial,
 #   surv | trials(density) ~ 1 + (1 | tank),
-#   prior = c(prior(normal(0, 1), class = Intercept),
-#             prior(cauchy(0, 1), class = sd)),
-#   iter = 4000, warmup = 1000, chains = 4, cores = 4,
-#   seed = 12)
-# b12.2 <- add_criterion(b12.2, c("loo", "waic"))
-# saveRDS(object = b12.2, file = a_file)
+#   prior = c(prior(normal(0, 1.5), class = Intercept),
+#             prior(exponential(1), class = sd)),
+#   cores = detectCores(),
+#   sample_prior = TRUE, seed = 13)
+# b13.2 <- add_criterion(b13.2, c("loo", "waic"))
+# saveRDS(object = b13.2, file = a_file)
+summary(b13.2)
 ```
 
 
@@ -127,37 +171,71 @@ b12.2 <- readRDS(file = a_file)  # load the file
 and compare the models
 
 ```{r}
-w <- loo_compare(b12.1, b12.2, criterion = "waic") %>%
+loo_compare(b13.1, b13.2, criterion = "waic")
+```
+
+and convert the elpd_diif to the waic metric
+
+```{r}
+loo_compare(b13.1, b13.2, criterion = "waic") %>%
   as.data.frame() %>%
   mutate(waic_diff = elpd_diff * -2,
-         waic_diff_se = se_diff * 2)
-w
-print(w[, c("elpd_diff", "se_diff","waic_diff", "waic_diff_se")], simplify = FALSE)
-print(w[, c("elpd_waic", "se_elpd_waic","waic", "se_waic")], simplify = FALSE)
+         waic_diff_se = se_diff * 2) %>%
+  select(elpd_diff, se_diff, waic_diff, waic_diff_se)
 ```
 
 ```{r}
-model_weights(b12.1, b12.2, weights = "waic")
+model_weights(b13.1, b13.2, weights = "waic") %>%
+  round(digits = 2)
 ```
-
-> The results above are different than those of McElrath and Kurtz.  
-They are close however, I ran the fit several times and cannot find the difference.
-The difference might be caused by the fact that McElrath uses a `tank` value that
-is an integer. Kurtz uses a factor for b12.1 but an integer for b12.3.
-I use a factor for both b12.1 and b12.3 which is more consistent with the fact
-that the `tank` value is an id, and should not be seen as an integer.
 
 
 
 ### Example: Multilevel tadpoles - Posterior distribution
 
 
-This time we don't have a list of intercepts.  We have the estimates of p and
-will use the posterior sample for that. The `bpost12.2` consists of 12 000 rows
-which is 3 chains with 3000 rows each, that is 4000 iterations less 1000 for warmup.
 
-The code from Kurtz is succint and now necessarily easy to follow.  McElrath
-is even horter.  Below is a detailed explanation of what is being done.
+```{r}
+summary(b13.2)
+```
+
+
+
+This time we don't have a list of intercepts as in `b13.2`.  We have a descripion
+of their distribution $\alpha_j \sim \mathcal{N}(\bar{\alpha}, \sigma)$ where
+$Intercept = \bar{\alpha}$ and $sd(Intercept) = \sigma$.
+
+The task of getting the posterior is easier with `tidybayes` and `posterior`
+than the way McElreath and Kurtz do it.
+
+```{r}
+# IMPORTANT: We use the median value, not the mean because of skewed
+#            binomila dist.
+fitted <- list()
+fitted <- within(fitted, {
+  newdata <- dataFrogs
+  data <- epred_draws(b13.2, newdata = newdata) %>%
+    as.data.frame() %>%
+    select(tank, density, .epred) %>%
+    mutate(prop = .epred / density) %>%
+    group_by(tank) %>%
+    summarize(surv_prop = median(prop))
+})
+# fitted$data
+```
+
+```{r}
+plotFrogs +
+  geom_point(fitted$data, mapping = aes(x = as.integer(tank), y = surv_prop),
+             inherit.aes = FALSE, shape = 1, size = 2, color = "darkorange")
+```
+
+
+
+
+
+
+
 
 ```{r}
 bpost12.2 <- posterior_samples(b12.2, add_chain = TRUE)
