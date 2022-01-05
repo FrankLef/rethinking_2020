@@ -210,7 +210,7 @@ than the way McElreath and Kurtz do it.
 
 ```{r}
 # IMPORTANT: We use the median value, not the mean because of skewed
-#            binomila dist.
+#            binomial dist. You don't always have to use the mean!
 fitted <- list()
 fitted <- within(fitted, {
   newdata <- dataFrogs
@@ -231,36 +231,11 @@ plotFrogs +
 ```
 
 
-
-
-
-
-
-
-```{r}
-bpost12.2 <- posterior_samples(b12.2, add_chain = TRUE)
-# glimpse(bpost12.2)
-```
-
-
-we note that the range of logodds is between -2 and 3.5
-
-```{r}
-# we use the stats::qlogis() and brms::logit()
-# once more to show they are the same
-t <- d %>%
-  mutate(propsurv_logodd = qlogis(propsurv),
-         propsurv_logodd_brms = logit(propsurv))
-t
-range(t$propsurv_logodd[is.finite(t$propsurv_logodd)])
-
-```
-
-First, we take a sampling of size 100 of the 3000 iterations from the posterior
+First, we take a sampling of size 100 of the 4000 draws from the posterior
 sample with `slice_sample(n = 100)`.
 
 Second, to simulate the **distribution** of the logodds values described by the 
-`b_Intercept` and `tank_Intercepts` of **each iteration** we create a 
+`b_Intercept` and `tank_Intercepts` of **each draw** we create a 
 sequence of 100 logodds values between -4 and 5 
 (based on the acutal range of -2, 3.5 shown just above)
 which is done by 
@@ -273,55 +248,37 @@ because the model is $\alpha_{tank} \sim \mathcal{N}(0, 5)$ and
 $\alpha \sim \mathcal{N}(0, 1)$.  This is done with
 
 
-```{r}
-set.seed(12)
-bpost12.2_dist <- bpost12.2 %>%
-  slice_sample(n = 100) %>%
-  expand(nesting(iter, b_Intercept, sd_tank__Intercept),
-         x = seq(from = -4, to = 5, length.out = 100)) %>%
-  mutate(dens = dnorm(x, mean = b_Intercept, sd = sd_tank__Intercept))
-stopifnot(nrow(bpost12.2_dist)==10000)
-```
-
-which gives this plot
 
 ```{r}
-p1 <- ggplot(bpost12.2_dist, aes(x = x, y = dens, group = iter)) +
-  geom_line(color = "orange") +
-  scale_x_continuous(breaks = scales::breaks_width(width = 1)) +
-  scale_y_continuous(breaks = scales::breaks_width(width = 0.05)) +
-  coord_cartesian(xlim = c(-3, 4)) +
-  ggthemes::theme_fivethirtyeight() +
-  theme(legend.position = "none") +
-  labs(title = "Population survival distribution",
-       subtitle = "log-odds scale", x = "log odds", y = "probability")
-p1
+samples <- list()
+samples <- within(samples, {
+  data1 <- as_draws_df(b13.2) %>%
+    slice_sample(n = 100) %>%
+    expand(nesting(.draw, b_Intercept, sd_tank__Intercept),
+           x = seq(from = -4, to = 5, length.out = 100)) %>%
+    mutate(density = dnorm(x, mean = b_Intercept, sd = sd_tank__Intercept))
+  data2 <- as_draws_df(b13.2) %>%
+    slice_sample(n = 1000, replace = TRUE) %>%
+    mutate(p_logit = rnorm(n(), mean = b_Intercept, sd = sd_tank__Intercept),
+           p = gtools::inv.logit(p_logit))
+  
+  p1 <- ggplot(data1, aes(x = x, y = density, group = .draw)) +
+    geom_line(alpha = .2, color = "sienna2") +
+    scale_y_continuous(NULL, breaks = NULL) +
+    coord_cartesian(xlim = c(-3, 4)) +
+    labs(title = "Population survival distribution",
+         subtitle = "log-odds scale", x = NULL, y = NULL)
+  
+  p2 <-  ggplot(data2, aes(x = p)) +
+    geom_density(size = 0, fill = "sienna2", color = "sienna2", adjust = 0.1) +
+    scale_y_continuous(NULL, breaks = NULL) +
+    labs(title = "Probability of survival",
+         subtitle = "transformed by the inverse-logit function",
+         x = NULL, y = NULL)
+})
+wrap_plots(samples$p1, samples$p2)
 ```
-and to simulate the probability of **survival rate** we simply use the posterir
-results as parameters for `rnorm()` as follows
 
-```{r}
-# we compue both plogis and inv_logit_scaled to show they are the same
-# plogis is better, from the stats package which is base R
-bpost12.2_surv <- bpost12.2 %>%
-  mutate(logodd_surv = rnorm(n = nrow(bpost12.2), 
-                                 mean = bpost12.2$b_Intercept,
-                                 sd = bpost12.2$sd_tank__Intercept),
-         surv = plogis(logodd_surv),
-         surv_brms = inv_logit_scaled(logodd_surv))
-stopifnot(nrow(bpost12.2_surv)==nrow(bpost12.2))
-```
-
-which we plot as follows
-
-```{r}
-p2 <- ggplot(bpost12.2_surv, aes(x = surv)) +
-  geom_density(aes(y = ..scaled..),stat = "density", fill = "orange", color = "transparent") +
-  theme_light() +
-  labs(title = "Probability of survival",
-       subtitle = "", x = "survival rate", y = "prob of the survival rate")
-p2
-```
 
 
 
@@ -333,11 +290,13 @@ p2
 
 
 $$
-surv_i \sim \mathcal{Binomial}(n_i, p_i) \\
-logit(p_i) = \alpha_{pond[i]} \\
-\alpha_{pond} \sim \mathcal{N}(\alpha, \sigma) \\
-\alpha \sim \mathcal{N}(0, 1) \\
-\sigma \sim \mathcal{HalfCauchy}(0, 1)
+\begin{align*}
+surv_i &\sim \mathcal{Binomial}(n_i, p_i) \\
+logit(p_i) &= \alpha_{pond[i]} \\
+\alpha_{pond} &\sim \mathcal{N}(\alpha, \sigma) \\
+\alpha &\sim \mathcal{N}(0, 1) \\
+\sigma &\sim \mathcal{HalfCauchy}(0, 1)
+\end{align*}
 $$
 
 where we have
