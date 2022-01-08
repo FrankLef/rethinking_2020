@@ -4,6 +4,7 @@ library(tidyr, quietly = TRUE)
 library(tidybayes, quietly = TRUE)
 library(rethinking)
 library(brms)
+library(qs)
 library(loo)
 library(modelr)
 library(simstudy)
@@ -98,8 +99,8 @@ $$
 and we fit this
 
 ```{r}
-a_file <- here::here("fits", "b13_01.rds")
-b13.1 <- readRDS(file = a_file)
+a_file <- here::here("fits", "b13_01.qs")
+b13.1 <- qread(a_file)
 # b13.1 <- brm(
 #   data = dataFrogs,
 #   family = binomial,
@@ -107,7 +108,7 @@ b13.1 <- readRDS(file = a_file)
 #   prior = c(prior(normal(0, 1.5), class = b)),
 #   cores = detectCores(), seed = 13)
 # b13.1 <- add_criterion(b13.1, c("loo", "waic"))
-# saveRDS(object = b13.1, file = a_file)
+# qsave(b13.1, file = a_file)
 # summary(b13.1)
 ```
 
@@ -178,8 +179,8 @@ explained in chapter 14.
 
 
 ```{r}
-a_file <- here::here("fits", "b13_02.rds")
-b13.2 <- readRDS(file = a_file)
+a_file <- here::here("fits", "b13_02.qs")
+b13.2 <- qread(a_file)
 # b13.2 <- brm(
 #   data = dataFrogs,
 #   family = binomial,
@@ -189,7 +190,7 @@ b13.2 <- readRDS(file = a_file)
 #   cores = detectCores(),
 #   sample_prior = TRUE, seed = 13)
 # b13.2 <- add_criterion(b13.2, c("loo", "waic"))
-# saveRDS(object = b13.2, file = a_file)
+# qsave(b13.2, a_file)
 summary(b13.2)
 ```
 
@@ -436,8 +437,8 @@ sim$data <- sim$data %>%
 
 
 ```{r}
-a_file <- here::here("fits", "b13_03.rds")
-b13.3 <- readRDS(file = a_file)
+a_file <- here::here("fits", "b13_03.qs")
+b13.3 <- qread(a_file)
 # b13.3 <- brm(
 #   data = sim$data,
 #   family = binomial,
@@ -445,7 +446,7 @@ b13.3 <- readRDS(file = a_file)
 #   prior = c(prior(normal(0, 1.5), class = Intercept),
 #             prior(exponential(1), class = sd)),
 #   cores = detectCores(), seed = 13)
-# saveRDS(object = b13.3, file = a_file)
+# qsave(b13.3, a_file)
 summary(b13.3)
 ```
 
@@ -603,19 +604,22 @@ data(chimpanzees)
 dataChimp <- chimpanzees %>%
   mutate(actor = factor(actor),
          block = factor(block),
-         treatment = factor(1 + prosoc_left + 2 * condition))
-# glimpse(dataChimp)
+         treatment = factor(1 + prosoc_left + 2 * condition,
+                            levels = as.character(1:4),
+                            labels = c("R/N", "L/N", "R/P", "L/P")))
+rm(chimpanzees)
+glimpse(dataChimp)
 ```
 
 
 
 ```{r}
-a_file <- here::here("fits", "b13_04.rds")
-b13.4 <- readRDS(file = a_file)  # load the file
-# b13.4 <- brm(data = dataChimp, 
+a_file <- here::here("fits", "b13_04.qs")
+b13.4 <- qread(a_file)
+# b13.4 <- brm(data = dataChimp,
 #       family = binomial,
 #       bf(pulled_left | trials(1) ~ a + b,
-#          a ~ 1 + (1 | actor) + (1 | block), 
+#          a ~ 1 + (1 | actor) + (1 | block),
 #          b ~ 0 + treatment,
 #          nl = TRUE),
 #       prior = c(prior(normal(0, 0.5), nlpar = b),
@@ -625,7 +629,7 @@ b13.4 <- readRDS(file = a_file)  # load the file
 #       iter = 2000, warmup = 1000, chains = 4, cores = 4,
 #       seed = 13)
 # b13.4 <- add_criterion(b13.4, c("loo", "waic"))
-# saveRDS(object = b13.4, file = a_file)
+# qsave(b13.4, a_file)
 ```
 
 the posterior samples is
@@ -671,12 +675,12 @@ wrap_plots(p)
 
 
 ```{r}
-a_file <- here::here("fits", "b13_05.rds")
-b13.5 <- readRDS(file = a_file) 
-# b13.5 <- brm(data = dataChimp, 
+a_file <- here::here("fits", "b13_05.qs")
+b13.5 <- qread(a_file)
+# b13.5 <- brm(data = dataChimp,
 #       family = binomial,
 #       bf(pulled_left | trials(1) ~ a + b,
-#          a ~ 1 + (1 | actor), 
+#          a ~ 1 + (1 | actor),
 #          b ~ 0 + treatment,
 #          nl = TRUE),
 #       prior = c(prior(normal(0, 0.5), nlpar = b),
@@ -684,7 +688,7 @@ b13.5 <- readRDS(file = a_file)
 #                 prior(exponential(1), class = sd, group = actor, nlpar = a)),
 #       iter = 2000, warmup = 1000, chains = 4, cores = 4, seed = 13)
 # b13.5 <- add_criterion(b13.5, c("loo", "waic"))
-# saveRDS(b13.5, file = a_file)
+# qsave(b13.5, a_file)
 ```
 
 
@@ -697,20 +701,18 @@ loo_compare(b13.4, b13.5, criterion = "waic")
 
 
 ```{r}
-a_file <- here::here("fits", "b13_06.rds")
-b13.6 <- readRDS(file = a_file) 
-# b13.6 <- brm(data = dataChimp, 
+a_file <- here::here("fits", "b13_06.qs")
+b13.6 <- qread(a_file)
+# b13.6 <- brm(data = dataChimp,
 #       family = binomial,
 #       pulled_left | trials(1) ~ 1 + (1 | actor) + (1 | block) + (1 | treatment),
 #       prior = c(prior(normal(0, 1.5), class = Intercept),
 #                 prior(exponential(1), class = sd)),
-#       iter = 2000, warmup = 1000, chains = 4, cores = 4,  
+#       iter = 2000, warmup = 1000, chains = 4, cores = 4,
 #       seed = 13)
 # b13.6 <- add_criterion(b13.6, c("loo", "waic"))
-# saveRDS(b13.6, file = a_file)
+# qsave(b13.6, a_file)
 ```
-
-
 
 
 ```{r}
@@ -728,9 +730,79 @@ message("Not covered")
 
 ## Multilevel posterior predictions
 
-
+Strongly recommended to read @kurtz2020b who is more elaborate in this section.
 
 ### Posterior prediction for same clusters
+
+We can do a posterior fit for chimp #2. Remember this chimp was an outlier as
+it was always pulling the left lever no matter what.
+
+```{r}
+fitd <- list()
+fitd <- within(fitd, {
+  chimp <- 2L
+  labels<- c("R/N", "L/N", "R/P", "L/P")
+  newdata <- data.frame(
+    actor = factor(chimp),
+    treatment = unique(dataChimp$treatment),
+    block = 1
+  )
+  data <- epred_draws(b13.4, newdata = newdata) %>%
+    select(-.chain, -.iteration, -.draw) %>%
+    summarize_draws()
+  # and the empirical frequencies are
+  obs <- dataChimp %>%
+    filter(actor == chimp) %>%
+    group_by(treatment) %>%
+    summarize(prob = mean(pulled_left))
+  p <- ggplot(obs, aes(x = treatment, y = prob, group = 1)) +
+    geom_lineribbon(data, 
+                    mapping = aes(x = treatment, y = mean, ymin = q5, ymax = q95),
+                    fill = "orange", color = "brown") +
+    geom_point(color = "navyblue", size = 2) +
+    coord_cartesian(ylim = c(0.75, 1))+
+    labs(title = sprintf("Fitted prediction for chimp # %d", chimp), 
+         x = NULL, y = NULL)
+})
+# glimpse(fitd$data)
+fitd$p
+```
+
+and for chimp # 5
+
+
+
+```{r}
+fitd <- list()
+fitd <- within(fitd, {
+  chimp <- 5L
+  labels<- c("R/N", "L/N", "R/P", "L/P")
+  newdata <- data.frame(
+    actor = factor(chimp),
+    treatment = unique(dataChimp$treatment),
+    block = 1
+  )
+  data <- epred_draws(b13.4, newdata = newdata) %>%
+    select(-.chain, -.iteration, -.draw) %>%
+    summarize_draws()
+  # and the empirical frequencies are
+  obs <- dataChimp %>%
+    filter(actor == chimp) %>%
+    group_by(treatment) %>%
+    summarize(prob = mean(pulled_left))
+  p <- ggplot(obs, aes(x = treatment, y = prob, group = 1)) +
+    geom_lineribbon(data, 
+                    mapping = aes(x = treatment, y = mean, ymin = q5, ymax = q95),
+                    fill = "orange", color = "brown") +
+    geom_point(color = "navyblue", size = 2) +
+    coord_cartesian(ylim = c(0, 1))+
+    labs(title = sprintf("Fitted prediction for chimp # %d", chimp), 
+         x = NULL, y = NULL)
+})
+# glimpse(fitd$data)
+fitd$p
+```
+
 
 
 
